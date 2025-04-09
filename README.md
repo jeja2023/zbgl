@@ -27,6 +27,8 @@
 
 ## 安装步骤
 
+### 在线安装
+
 1. 克隆仓库：
 ```bash
 git clone https://github.com/jeja2023/zbgl.git
@@ -41,21 +43,24 @@ chmod +x install_dependencies.sh
 ./install_dependencies.sh
 ```
 
-或者手动安装：
-```bash
-# 创建虚拟环境
-python -m venv .venv
+### 离线安装
 
-# 激活虚拟环境
-# Windows:
-.venv\Scripts\activate
-# Linux/Mac:
-source .venv/bin/activate
+1. 在有网络的环境下：
+   - Windows: 运行 `download_dependencies.bat`
+   - Linux/Mac: 
+     ```bash
+     chmod +x download_dependencies.sh
+     ./download_dependencies.sh
+     ```
+   - 将整个项目目录（包含 packages 文件夹）复制到目标机器
 
-# 安装依赖
-cd backend
-pip install -r requirements.txt
-```
+2. 在目标机器上：
+   - Windows: 运行 `install_dependencies_offline.bat`
+   - Linux/Mac:
+     ```bash
+     chmod +x install_dependencies_offline.sh
+     ./install_dependencies_offline.sh
+     ```
 
 ## 使用方法
 
@@ -110,8 +115,13 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ├── frontend/              # 前端代码
 │   ├── static/           # 静态文件
 │   └── templates/        # HTML 模板
-├── install_dependencies.bat  # Windows 安装脚本
-├── install_dependencies.sh   # Linux/Mac 安装脚本
+├── packages/              # 离线安装包目录
+├── install_dependencies.bat      # Windows 在线安装脚本
+├── install_dependencies.sh       # Linux/Mac 在线安装脚本
+├── install_dependencies_offline.bat  # Windows 离线安装脚本
+├── install_dependencies_offline.sh   # Linux/Mac 离线安装脚本
+├── download_dependencies.bat     # Windows 下载依赖脚本
+├── download_dependencies.sh      # Linux/Mac 下载依赖脚本
 ├── start_server.bat      # Windows 启动脚本
 ├── start_server.sh       # Linux/Mac 启动脚本
 └── README.md             # 项目说明
@@ -136,4 +146,5 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 1. 首次运行时会自动创建数据库和管理员账号
 2. 请及时修改默认管理员密码
 3. 确保服务器有足够的存储空间
-4. 定期备份数据库文件 
+4. 定期备份数据库文件
+5. 离线安装时确保 packages 目录包含所有必要的依赖包 
