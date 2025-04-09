@@ -4,113 +4,105 @@
 
 ## 功能特点
 
-- 用户管理
-  - 用户登录/注销
-  - 管理员可以创建、编辑和删除用户
-  - 用户可以修改自己的密码
-  - 支持部门分配
-- 值班信息管理
-  - 按日期查看值班信息
-  - 按部门管理值班信息
-  - 支持添加、编辑和删除值班信息
-  - 限制只能查看和编辑当前日期及以前的值班信息
-- 数据导入导出
-  - 支持 Excel 格式的值班信息导入
-  - 支持导出值班信息到 Excel
-  - 提供导入模板下载
+- 用户登录/登出
+- 管理员功能
+  - 用户管理
+  - 部门管理
+  - 值班信息管理
+- 数据导入/导出
+- 局域网部署支持
 
 ## 技术栈
 
-- 后端
-  - FastAPI
-  - SQLAlchemy
-  - SQLite
-  - Python 3.8+
-- 前端
-  - HTML5
-  - CSS3
-  - JavaScript
-  - Bootstrap 5
+- 后端：FastAPI 0.104.1
+- 数据库：SQLite
+- 前端：HTML + CSS + JavaScript
+- 认证：JWT
 
 ## 安装步骤
 
-1. 克隆仓库
+1. 克隆仓库：
 ```bash
-git clone [repository-url]
-cd duty-management-system
+git clone https://github.com/jeja2023/zbgl.git
+cd zbgl
 ```
 
-2. 创建虚拟环境
+2. 创建虚拟环境：
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
 ```
 
-3. 安装依赖
+3. 激活虚拟环境：
+- Windows:
 ```bash
+.venv\Scripts\activate
+```
+- Linux/Mac:
+```bash
+source .venv/bin/activate
+```
+
+4. 安装依赖：
+```bash
+cd backend
 pip install -r requirements.txt
 ```
 
-4. 启动服务
+## 使用方法
+
+1. 启动服务器：
+- Windows: 双击运行 `start_server.bat`
+- 命令行方式：
 ```bash
 cd backend
-uvicorn main:app --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-5. 访问系统
-打开浏览器访问 http://localhost:8000
+2. 访问系统：
+- 本机访问：http://localhost:8000
+- 局域网访问：http://<服务器IP>:8000
 
-## 使用说明
+3. 默认管理员账号：
+- 用户名：admin
+- 密码：admin123
 
-1. 用户登录
-   - 默认管理员账号：admin
-   - 默认管理员密码：admin123
+## 局域网部署说明
 
-2. 值班信息管理
-   - 选择日期查看值班信息
-   - 点击编辑按钮修改值班信息
-   - 只能查看和编辑当前日期及以前的值班信息
+1. 确保服务器和客户端在同一个局域网内
 
-3. 用户管理（仅管理员）
-   - 创建新用户
-   - 编辑用户信息
-   - 删除用户
-   - 分配用户部门
+2. 查看服务器 IP 地址：
+- Windows: 打开命令提示符，输入 `ipconfig`
+- Linux/Mac: 打开终端，输入 `ifconfig` 或 `ip addr`
 
-4. 数据导入导出
-   - 下载导入模板
-   - 按模板格式填写值班信息
-   - 上传 Excel 文件导入数据
-   - 导出值班信息到 Excel
+3. 启动服务器：
+- 使用 `start_server.bat` 或命令行方式启动
+- 确保使用 `--host 0.0.0.0` 参数
+
+4. 客户端访问：
+- 在浏览器中输入 `http://<服务器IP>:8000`
+- 例如：`http://192.168.1.100:8000`
+
+5. 防火墙设置：
+- 确保 Windows 防火墙允许 8000 端口的入站连接
+- 或临时关闭防火墙进行测试
 
 ## 项目结构
 
 ```
-duty-management-system/
-├── backend/
-│   ├── main.py              # 后端主程序
-│   ├── requirements.txt     # Python 依赖
-│   └── duty_system.db      # SQLite 数据库文件
-├── frontend/
-│   ├── static/
-│   │   ├── css/
-│   │   │   └── style.css   # 样式文件
-│   │   └── js/
-│   │       └── script.js   # JavaScript 文件
-│   └── templates/
-│       └── index.html      # 主页面模板
-└── README.md               # 项目说明文档
+.
+├── backend/                # 后端代码
+│   ├── main.py            # 主程序
+│   └── requirements.txt   # 依赖文件
+├── frontend/              # 前端代码
+│   ├── static/           # 静态文件
+│   └── templates/        # HTML 模板
+├── start_server.bat      # Windows 启动脚本
+└── README.md             # 项目说明
 ```
 
-## 贡献指南
+## 注意事项
 
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
-
-## 许可证
-
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情 
+1. 首次运行时会自动创建数据库和管理员账号
+2. 请及时修改默认管理员密码
+3. 确保服务器有足够的存储空间
+4. 定期备份数据库文件 
