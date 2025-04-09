@@ -17,11 +17,16 @@ import pandas as pd
 import io
 import tempfile
 from dotenv import load_dotenv
+import secrets
 
 # 加载环境变量
 load_dotenv()
 
 app = FastAPI()
+
+# 自动生成 SECRET_KEY
+SECRET_KEY = secrets.token_hex(32)
+print(f"Generated new SECRET_KEY: {SECRET_KEY}")
 
 # 配置CORS
 app.add_middleware(
@@ -179,7 +184,6 @@ class DutyInfo(BaseModel):
     updated_at: Optional[datetime] = None
 
 # 安全配置
-SECRET_KEY = os.getenv("SECRET_KEY", "development-secret-key")  # 使用环境变量，如果不存在则使用默认值
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

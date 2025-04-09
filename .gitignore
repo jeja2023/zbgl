@@ -10,10 +10,6 @@ ENV/
 env/
 *.db
 
-# 环境变量文件
-.env
-.env.*
-
 # IDE
 .idea/
 .vscode/
