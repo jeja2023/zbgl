@@ -19,6 +19,12 @@
 - 前端：HTML + CSS + JavaScript
 - 认证：JWT
 
+## 系统要求
+
+- Python 3.8 或更高版本
+- 至少 500MB 可用磁盘空间
+- 支持 Windows、Linux 和 MacOS
+
 ## 安装步骤
 
 1. 克隆仓库：
@@ -27,23 +33,26 @@ git clone https://github.com/jeja2023/zbgl.git
 cd zbgl
 ```
 
-2. 创建虚拟环境：
+2. 安装依赖：
+- Windows: 双击运行 `install_dependencies.bat`
+- Linux/Mac: 
 ```bash
+chmod +x install_dependencies.sh
+./install_dependencies.sh
+```
+
+或者手动安装：
+```bash
+# 创建虚拟环境
 python -m venv .venv
-```
 
-3. 激活虚拟环境：
-- Windows:
-```bash
+# 激活虚拟环境
+# Windows:
 .venv\Scripts\activate
-```
-- Linux/Mac:
-```bash
+# Linux/Mac:
 source .venv/bin/activate
-```
 
-4. 安装依赖：
-```bash
+# 安装依赖
 cd backend
 pip install -r requirements.txt
 ```
@@ -52,6 +61,11 @@ pip install -r requirements.txt
 
 1. 启动服务器：
 - Windows: 双击运行 `start_server.bat`
+- Linux/Mac: 
+```bash
+chmod +x start_server.sh
+./start_server.sh
+```
 - 命令行方式：
 ```bash
 cd backend
@@ -96,9 +110,26 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ├── frontend/              # 前端代码
 │   ├── static/           # 静态文件
 │   └── templates/        # HTML 模板
+├── install_dependencies.bat  # Windows 安装脚本
+├── install_dependencies.sh   # Linux/Mac 安装脚本
 ├── start_server.bat      # Windows 启动脚本
+├── start_server.sh       # Linux/Mac 启动脚本
 └── README.md             # 项目说明
 ```
+
+## 依赖说明
+
+主要依赖包及其用途：
+- fastapi: Web 框架
+- uvicorn: ASGI 服务器
+- python-jose: JWT 认证
+- passlib: 密码哈希
+- python-multipart: 文件上传
+- jinja2: 模板引擎
+- pandas: 数据处理
+- openpyxl: Excel 文件处理
+- python-dotenv: 环境变量管理
+- bcrypt: 密码加密
 
 ## 注意事项
 
