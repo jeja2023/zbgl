@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>值班信息管理系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>值班信息管理系统</h1>
+        
+        <div class="controls">
+            <div class="date-selector">
+                <label for="date">选择日期：</label>
+                <input type="date" id="date" name="date">
+                <button id="manageDeptBtn" style="display: none;">管理部门</button>
+                <button id="manageUserBtn" style="display: none;">管理用户</button>
+                <button id="importBtn" style="display: none;">导入</button>
+                <button id="downloadTemplateBtn" style="display: none;">下载模板</button>
+                <button id="exportBtn" style="display: none;">导出</button>
+            </div>
+            <div class="user-controls">
+                <button id="loginBtn">登录</button>
+                <div class="user-status" id="userStatus" style="display: none;">
+                    <div class="status-icon"></div>
+                    <span class="username" id="usernameDisplay"></span>
+                    <button id="profileBtn" class="btn btn-secondary">个人信息</button>
+                    <button id="logoutBtn" class="btn btn-danger">退出登录</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="duty-table">
+            <div class="duty-column">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>部门</th>
+                            <th>领导</th>
+                            <th>主管</th>
+                            <th>成员</th>
+                            <th class="operation-column" id="leftOperationHeader" style="display: none;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leftDutyTableBody">
+                        <!-- 左侧值班信息 -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="duty-column">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>部门</th>
+                            <th>领导</th>
+                            <th>主管</th>
+                            <th>成员</th>
+                            <th class="operation-column" id="rightOperationHeader" style="display: none;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rightDutyTableBody">
+                        <!-- 右侧值班信息 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录模态框 -->
+    <div class="login-modal" id="loginModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>用户登录</h2>
+                <button class="close-button" id="closeLogin">&times;</button>
+            </div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" required>
+                </div>
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="closeLoginBtn">取消</button>
+                    <button type="submit" class="btn btn-primary">登录</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 编辑值班信息模态框 -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>编辑值班信息</h2>
+                <button class="close-button" onclick="hideModal('editModal')">&times;</button>
+            </div>
+            <form id="editForm">
+                <input type="hidden" id="editDepartment">
+                <div class="form-group">
+                    <label for="leaderName">值班领导姓名</label>
+                    <input type="text" id="leaderName" name="leader_name">
+                </div>
+                <div class="form-group">
+                    <label for="leaderPhone">值班领导电话</label>
+                    <input type="text" id="leaderPhone" name="leader_phone">
+                </div>
+                <div class="form-group">
+                    <label for="managerName">值班经理姓名</label>
+                    <input type="text" id="managerName" name="manager_name">
+                </div>
+                <div class="form-group">
+                    <label for="managerPhone">值班经理电话</label>
+                    <input type="text" id="managerPhone" name="manager_phone">
+                </div>
+                <div class="form-group">
+                    <label for="memberName">值班人员姓名</label>
+                    <input type="text" id="memberName" name="member_name">
+                </div>
+                <div class="form-group">
+                    <label for="memberPhone">值班人员电话</label>
+                    <input type="text" id="memberPhone" name="member_phone">
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 部门管理模态框 -->
+    <div class="modal department-modal" id="departmentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>部门管理</h2>
+                <button class="close-button" id="closeDepartment">&times;</button>
+            </div>
+            <div class="department-controls">
+                <input type="text" id="newDepartment" placeholder="输入新部门名称">
+                <button id="addDepartment">添加部门</button>
+            </div>
+            <div class="department-list">
+                <div class="department-column" id="leftColumn">
+                    <!-- 左侧部门列表 -->
+                </div>
+                <div class="department-column" id="rightColumn">
+                    <!-- 右侧部门列表 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户管理模态框 -->
+    <div class="modal user-modal" id="userModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>用户管理</h2>
+                <button class="close-button" id="closeUser">&times;</button>
+            </div>
+            <div class="user-controls">
+                <button id="addUserBtn" class="btn btn-primary">添加用户</button>
+            </div>
+            <div class="user-list">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>部门</th>
+                            <th>管理员</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody">
+                        <!-- 用户列表 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑用户模态框 -->
+    <div id="editUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="editUserTitle">编辑用户</h2>
+                <button class="close-button" onclick="hideModal('editUserModal')">&times;</button>
+            </div>
+            <form id="editUserForm">
+                <input type="hidden" id="editUsername">
+                <div class="form-group">
+                    <label for="newUsername">用户名</label>
+                    <input type="text" id="newUsername" required>
+                </div>
+                <div class="form-group">
+                    <label for="editPassword">密码</label>
+                    <input type="password" id="editPassword">
+                </div>
+                <div class="form-group">
+                    <label for="userDepartment">部门</label>
+                    <select id="userDepartment">
+                        <option value="">请选择部门</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="isAdmin">管理员权限</label>
+                    <input type="checkbox" id="isAdmin">
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 个人信息模态框 -->
+    <div id="profileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>个人信息</h2>
+                <button class="close-button" onclick="hideModal('profileModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="profile-info">
+                    <div class="info-item">
+                        <label>用户名：</label>
+                        <span id="profileUsername"></span>
+                    </div>
+                    <div class="info-item">
+                        <label>部门：</label>
+                        <span id="profileDepartment"></span>
+                    </div>
+                    <div class="info-item">
+                        <label>管理员权限：</label>
+                        <span id="profileIsAdmin"></span>
+                    </div>
+                </div>
+                <div class="change-password-section">
+                    <h3>修改密码</h3>
+                    <form id="changePasswordForm">
+                        <div class="form-group">
+                            <label for="currentPassword">当前密码</label>
+                            <input type="password" id="currentPassword" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="profileNewPassword">新密码</label>
+                            <input type="password" id="profileNewPassword" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">确认新密码</label>
+                            <input type="password" id="confirmPassword" required>
+                        </div>
+                        <div class="button-group">
+                            <button type="submit" class="btn btn-primary">修改密码</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+</html> 
