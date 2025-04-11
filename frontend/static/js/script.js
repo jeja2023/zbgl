@@ -578,7 +578,19 @@ async function loadDutyInfo(date) {
             headers['Authorization'] = `Bearer ${token}`;
         }
         
-        const response = await fetch(`/api/duty-info?date=${date}`, {
+        // 获取当前时间
+        const now = new Date();
+        const currentHour = now.getHours();
+        
+        // 如果当前时间在9:00之前，显示前一天的值班信息
+        let displayDate = date;
+        if (currentHour < 9) {
+            const yesterday = new Date(date);
+            yesterday.setDate(yesterday.getDate() - 1);
+            displayDate = yesterday.toISOString().split('T')[0];
+        }
+        
+        const response = await fetch(`/api/duty-info?date=${displayDate}`, {
             headers: headers
         });
         
@@ -609,15 +621,28 @@ async function loadDutyInfo(date) {
 // 检查是否可以操作
 function canOperate(date, department) {
     const selectedDate = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
     
     // 检查部门权限
     if (!currentUser.is_admin && currentUser.department !== department) {
         return false;
     }
     
-    return true;
+    // 检查时间权限
+    const currentHour = now.getHours();
+    const currentMinutes = now.getMinutes();
+    const currentSeconds = now.getSeconds();
+    
+    // 如果当前时间在9:00之前，允许操作前一天的值班信息
+    if (currentHour < 9) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        yesterday.setHours(0, 0, 0, 0);
+        return selectedDate.getTime() === yesterday.getTime();
+    }
+    
+    // 如果当前时间在9:00之后，允许操作当天的值班信息
+    return selectedDate.getTime() === now.setHours(0, 0, 0, 0);
 }
 
 // 删除值班信息
@@ -1291,4 +1316,45 @@ async function downloadTemplate() {
         console.error('下载模板错误:', error);
         showToast(error.message, 'error');
     }
-} 
+}
+
+function updateDateTime() {
+    const now = new Date();
+    const currentHour = now.getHours();
+    
+    // 更新日期显示
+    const dateString = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日\n${now.toLocaleDateString('zh-CN', {
+        weekday: 'long'
+    })}`;
+    document.getElementById('currentDate').textContent = dateString;
+    
+    // 更新时间显示
+    const timeString = now.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    document.getElementById('currentTime').textContent = timeString;
+    
+    // 更新值班时间说明
+    const timeInfo = document.querySelector('.time-info');
+    if (timeInfo) {
+        // 如果当前时间在9:00之前，显示前一天的值班信息
+        let displayDate = new Date();
+        if (currentHour < 9) {
+            displayDate.setDate(displayDate.getDate() - 1);
+        }
+        
+        const formattedDate = `${displayDate.getFullYear()}/${String(displayDate.getMonth() + 1).padStart(2, '0')}/${String(displayDate.getDate()).padStart(2, '0')}`;
+        const nextDate = new Date(displayDate.getTime() + 24 * 60 * 60 * 1000);
+        const nextFormattedDate = `${nextDate.getFullYear()}/${String(nextDate.getMonth() + 1).padStart(2, '0')}/${String(nextDate.getDate()).padStart(2, '0')}`;
+        timeInfo.textContent = `值班时间：\n${formattedDate} 09:00:00 - ${nextFormattedDate} 08:59:59`;
+    }
+}
+
+// 初始更新时间
+updateDateTime();
+
+// 每秒更新一次时间
+setInterval(updateDateTime, 1000); 
