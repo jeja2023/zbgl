@@ -90,7 +90,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const today = new Date().toISOString().split('T')[0];
     if (dateInput) {
         dateInput.value = today;
-        dateInput.max = today; // 设置最大日期为今天
     }
     
     // 初始化时隐藏所有模态框
@@ -130,16 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (closeEditBtn) closeEditBtn.addEventListener('click', () => hideModal('editModal'));
     if (addDepartmentBtn) addDepartmentBtn.addEventListener('click', addDepartment);
     if (dateInput) {
-        dateInput.addEventListener('change', () => {
-            const selectedDate = new Date(dateInput.value);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            if (selectedDate > today) {
-                showToast('不能选择未来日期', 'error');
-                dateInput.value = today.toISOString().split('T')[0];
-                return;
-            }
+        dateInput.addEventListener('change', function() {
             loadDutyInfo(dateInput.value);
         });
     }
@@ -621,11 +611,6 @@ function canOperate(date, department) {
     const selectedDate = new Date(date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    // 检查日期
-    if (selectedDate < today) {
-        return false;
-    }
     
     // 检查部门权限
     if (!currentUser.is_admin && currentUser.department !== department) {
