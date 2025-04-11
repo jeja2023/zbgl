@@ -103,19 +103,26 @@ document.addEventListener('DOMContentLoaded', () => {
     loadDutyInfo(today);
     loadDepartments();
     
-    // 检查是否已登录
+    // 初始化日期时间显示
+    updateDateTime();
+    setInterval(updateDateTime, 1000);
+    
+    // 显示日期时间控件
+    updateDateTimeControls();
+    
+    // 检查登录状态
     const token = localStorage.getItem('token');
     if (token) {
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
             currentUser = {
-                username: payload.sub,
+                username: payload.username,
                 is_admin: payload.is_admin,
                 department: payload.department
             };
             updateUI();
         } catch (error) {
-            console.error('Token解析错误:', error);
+            console.error('解析token失败:', error);
             localStorage.removeItem('token');
         }
     }
@@ -1315,6 +1322,14 @@ async function downloadTemplate() {
     } catch (error) {
         console.error('下载模板错误:', error);
         showToast(error.message, 'error');
+    }
+}
+
+// 更新日期时间控件显示
+function updateDateTimeControls() {
+    const dateTimeControls = document.getElementById('dateTimeControls');
+    if (dateTimeControls) {
+        dateTimeControls.style.display = 'block';
     }
 }
 
