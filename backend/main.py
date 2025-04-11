@@ -47,6 +47,13 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE = str(BASE_DIR / "duty_system.db")
 
+# 获取东八区时间
+def get_east8_time():
+    """获取东八区时间"""
+    utc_now = datetime.utcnow()
+    east8_time = utc_now + timedelta(hours=8)
+    return east8_time.strftime("%Y-%m-%d %H:%M:%S")
+
 def init_db():
     """初始化数据库"""
     # 检查数据库文件是否存在
@@ -90,13 +97,19 @@ def init_db():
             )
         """)
         
-        # 创建默认管理员用户
-        hashed_password = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
-        current_time = get_east8_time()
-        cursor.execute("""
-            INSERT INTO users (username, password, is_admin, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, ("admin", hashed_password, 1, current_time, current_time))
+        # 检查是否已存在管理员账户
+        cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
+        admin_exists = cursor.fetchone()[0] > 0
+        
+        if not admin_exists:
+            # 创建默认管理员用户
+            hashed_password = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
+            current_time = get_east8_time()
+            cursor.execute("""
+                INSERT INTO users (username, password, is_admin, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, ("admin", hashed_password, 1, current_time, current_time))
+            print("已创建默认管理员账户")
         
         conn.commit()
         print("数据库初始化完成")
@@ -109,13 +122,6 @@ def init_db():
 
 # 初始化数据库
 init_db()
-
-# 获取东八区时间
-def get_east8_time():
-    """获取东八区时间"""
-    utc_now = datetime.utcnow()
-    east8_time = utc_now + timedelta(hours=8)
-    return east8_time.strftime("%Y-%m-%d %H:%M:%S")
 
 # 工具函数
 def get_db():
@@ -926,6 +932,11 @@ async def import_duty_info(
         required_columns = ['部门', '值班领导姓名', '值班领导电话', '值班经理姓名', '值班经理电话', '值班人员姓名', '值班人员电话']
         if not all(col in df.columns for col in required_columns):
             raise HTTPException(status_code=400, detail="文件格式不正确，请确保包含所有必要列")
+            
+        # 确保手机号码列为字符串类型
+        phone_columns = ['值班领导电话', '值班经理电话', '值班人员电话']
+        for col in phone_columns:
+            df[col] = df[col].astype(str).apply(lambda x: x.replace('.0', '') if x != 'nan' else '')
         
         conn = None
         try:

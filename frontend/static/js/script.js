@@ -449,8 +449,8 @@ function updateUI() {
     const token = localStorage.getItem('token');
     isLoggedIn = !!token;
     
-    if (isLoggedIn) {
-        // 解析token获取用户信息
+    if (isLoggedIn && !currentUser) {
+        // 只有在currentUser为空时才解析token获取用户信息
         try {
             const payload = JSON.parse(atob(token.split('.')[1]));
             currentUser = {
@@ -465,7 +465,7 @@ function updateUI() {
             currentUser = null;
             localStorage.removeItem('token');
         }
-    } else {
+    } else if (!isLoggedIn) {
         currentUser = null;
     }
     

@@ -340,6 +340,11 @@ button:hover {
 .edit-btn, .delete-btn {
     padding: 5px 10px;
     font-size: 12px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
 }
 
 .edit-btn {
