@@ -301,6 +301,18 @@ async def login(
 async def get_duty_info(date: date, db: sqlite3.Connection = Depends(get_db)):
     try:
         c = db.cursor()
+        
+        # 获取所有部门（包括历史记录中的部门）
+        c.execute("""
+            SELECT DISTINCT department 
+            FROM duty_info 
+            WHERE date <= ?
+            ORDER BY department
+        """, (date.isoformat(),))
+        
+        all_departments = [row[0] for row in c.fetchall()]
+        
+        # 获取指定日期的值班信息
         c.execute("""
             SELECT department, leader_name, leader_phone, manager_name, manager_phone, 
                    member_name, member_phone
@@ -309,6 +321,18 @@ async def get_duty_info(date: date, db: sqlite3.Connection = Depends(get_db)):
         """, (date.isoformat(),))
         
         duty_info = {}
+        # 首先为所有部门创建空记录
+        for dept in all_departments:
+            duty_info[dept] = {
+                "leader_name": "",
+                "leader_phone": "",
+                "manager_name": "",
+                "manager_phone": "",
+                "member_name": "",
+                "member_phone": ""
+            }
+        
+        # 然后填充有值班信息的部门
         for row in c.fetchall():
             duty_info[row[0]] = {
                 "leader_name": row[1],
@@ -318,6 +342,7 @@ async def get_duty_info(date: date, db: sqlite3.Connection = Depends(get_db)):
                 "member_name": row[5],
                 "member_phone": row[6]
             }
+            
         return duty_info
     except Exception as e:
         raise HTTPException(
@@ -535,15 +560,21 @@ async def create_department(department: dict, current_user: User = Depends(get_c
 
 @app.put("/api/departments/{old_name}")
 async def update_department(old_name: str, department: dict, current_user: User = Depends(get_current_user)):
-    """更新部门名称"""
+    """更新部门名称（只更新指定日期及以后的记录）"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="只有管理员可以修改部门")
     
     try:
         conn = sqlite3.connect(DATABASE, check_same_thread=False)
         cursor = conn.cursor()
-        cursor.execute("UPDATE duty_info SET department = ? WHERE department = ?", 
-                      (department["name"], old_name))
+        
+        # 只更新指定日期及以后的记录
+        cursor.execute("""
+            UPDATE duty_info 
+            SET department = ? 
+            WHERE department = ? AND date >= ?
+        """, (department["name"], old_name, department.get("start_date", datetime.now().date().isoformat())))
+        
         conn.commit()
         return {"message": "部门更新成功"}
     except Exception as e:
