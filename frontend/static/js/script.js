@@ -1858,30 +1858,22 @@ function getCurrentShift(date = null) {
 // 修改loadOperationCenterDuty函数
 async function loadOperationCenterDuty() {
     try {
-        // 获取当前日期
-        const now = new Date();
-        const currentHour = now.getHours();
-        let displayDate = now.toISOString().split('T')[0];
+        const currentDate = new Date().toISOString().split('T')[0];
+        const currentShift = getCurrentShift(currentDate);
         
-        // 如果当前时间在9:00之前，显示前一天的值班信息
-        if (currentHour < 9) {
-            const yesterday = new Date(now);
-            yesterday.setDate(yesterday.getDate() - 1);
-            displayDate = yesterday.toISOString().split('T')[0];
-        }
-        
-        const response = await fetch(`/api/operation-center-duty?date=${displayDate}`);
-        
+        // 获取运营中心值班信息
+        const response = await fetch(`/api/operation-center-duty?date=${currentDate}`);
         if (!response.ok) {
             throw new Error('获取运营中心值班信息失败');
         }
         
         const data = await response.json();
         
-        // 获取当前班次
-        const currentShift = getCurrentShift(displayDate);
-        // 显示当前班次
-        document.getElementById('currentShift').textContent = `${currentShift}班`;
+        // 更新当前班次显示
+        const shiftElement = document.getElementById('currentShift');
+        if (shiftElement) {
+            shiftElement.textContent = `${currentShift}班`;
+        }
         
         if (data[currentShift]) {
             const duty = data[currentShift];
@@ -1889,8 +1881,8 @@ async function loadOperationCenterDuty() {
             // 处理多人数据
             const formatPersonnel = (names, phones, title) => {
                 if (!names || !phones) return '-';
-                const nameList = names.split('\n').filter(n => n.trim());
-                const phoneList = phones.split('\n').filter(p => p.trim());
+                const nameList = names.split('、').filter(n => n.trim());
+                const phoneList = phones.split('、').filter(p => p.trim());
                 const formattedList = nameList.map((name, index) => {
                     const phone = phoneList[index] || '-';
                     return `<div><span class="duty-title">${title}：</span><span class="duty-content">${name.trim()} ${phone.trim()}</span></div>`;
@@ -2002,10 +1994,12 @@ async function importOperationDuty() {
         });
         
         if (!response.ok) {
-            throw new Error('导入运营中心值班信息失败');
+            const errorData = await response.json();
+            throw new Error(errorData.detail || '导入运营中心值班信息失败');
         }
         
-        alert('导入成功');
+        const result = await response.json();
+        alert(result.message || '导入成功');
         loadOperationCenterDuty();
     } catch (error) {
         console.error('导入运营中心值班信息错误:', error);
@@ -2013,4 +2007,24 @@ async function importOperationDuty() {
     } finally {
         fileInput.value = '';
     }
+}
+
+// 下载运营中心值班人员导入模板
+function downloadOperationTemplate() {
+    fetch('/api/operation_center/template')
+        .then(response => response.blob())
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '运营中心值班人员导入模板.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        })
+        .catch(error => {
+            console.error('下载模板失败:', error);
+            alert('下载模板失败，请重试');
+        });
 } 

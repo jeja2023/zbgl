@@ -20,6 +20,7 @@
             <div class="operation-center-actions" id="operationCenterActions" style="display: none;">
                 <button id="editOperationDutyBtn" class="edit-btn">编辑</button>
                 <button onclick="document.getElementById('importOperationDutyFile').click()" class="edit-btn">导入</button>
+                <button onclick="downloadOperationTemplate()" class="edit-btn">下载模板</button>
             </div>
             <input type="file" id="importOperationDutyFile" style="display: none;" accept=".xlsx,.xls" onchange="importOperationDuty()">
             

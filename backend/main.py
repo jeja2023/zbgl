@@ -19,6 +19,10 @@ import tempfile
 import secrets
 import xlsxwriter
 import logging
+from openpyxl import Workbook
+from io import BytesIO
+from urllib.parse import quote
+import re
 
 # 配置日志
 logging.basicConfig(
@@ -159,32 +163,6 @@ def init_db():
             # 创建运营中心值班人员表索引
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_operation_center_duty_date ON operation_center_duty(date)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_operation_center_duty_shift ON operation_center_duty(shift)")
-            
-            # 创建值班历史记录表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS duty_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date TEXT NOT NULL,
-                    department TEXT NOT NULL,
-                    shift INTEGER,
-                    leader_name TEXT,
-                    leader_phone TEXT,
-                    manager_name TEXT,
-                    manager_phone TEXT,
-                    member_name TEXT,
-                    member_phone TEXT,
-                    backup_name TEXT,
-                    backup_phone TEXT,
-                    operation TEXT NOT NULL,
-                    operator TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # 创建值班历史记录表索引
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_history_date ON duty_history(date)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_history_department ON duty_history(department)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_history_shift ON duty_history(shift)")
             
             conn.commit()
             logger.info("Database initialized successfully")
@@ -1220,12 +1198,12 @@ async def get_operation_center_duty(
         fixed_duty = {}
         for row in c.fetchall():
             fixed_duty[row[0]] = {
-                "leader_name": row[1],
-                "leader_phone": row[2],
-                "manager_name": row[3],
-                "manager_phone": row[4],
-                "member_name": row[5],
-                "member_phone": row[6]
+                "leader_name": row[1] or "",
+                "leader_phone": row[2] or "",
+                "manager_name": row[3] or "",
+                "manager_phone": row[4] or "",
+                "member_name": row[5] or "",
+                "member_phone": row[6] or ""
             }
         
         # 获取备班人员信息
@@ -1237,8 +1215,8 @@ async def get_operation_center_duty(
         backup_duty = {}
         for row in c.fetchall():
             backup_duty[row[0]] = {
-                "backup_name": row[1],
-                "backup_phone": row[2]
+                "backup_name": row[1] or "",
+                "backup_phone": row[2] or ""
             }
         
         # 合并信息
@@ -1247,6 +1225,17 @@ async def get_operation_center_duty(
             if shift in fixed_duty:
                 result[shift] = {
                     **fixed_duty[shift],
+                    "backup_name": backup_duty.get(shift, {}).get("backup_name", ""),
+                    "backup_phone": backup_duty.get(shift, {}).get("backup_phone", "")
+                }
+            else:
+                result[shift] = {
+                    "leader_name": "",
+                    "leader_phone": "",
+                    "manager_name": "",
+                    "manager_phone": "",
+                    "member_name": "",
+                    "member_phone": "",
                     "backup_name": backup_duty.get(shift, {}).get("backup_name", ""),
                     "backup_phone": backup_duty.get(shift, {}).get("backup_phone", "")
                 }
@@ -1606,53 +1595,129 @@ async def import_operation_center_duty(
     try:
         # 读取 Excel 文件
         contents = await file.read()
-        df = pd.read_excel(io.BytesIO(contents))
+        try:
+            df = pd.read_excel(io.BytesIO(contents))
+        except Exception as e:
+            print(f"读取Excel文件错误: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"读取Excel文件失败: {str(e)}"
+            )
+        
+        # 检查必要的列是否存在
+        required_columns = ['日期', '班次', '值班领导', '领导电话', '值班主管', '主管电话', '值班人员', '人员电话', '备班人员', '备班电话']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Excel文件缺少必要的列: {', '.join(missing_columns)}"
+            )
         
         c = db.cursor()
         current_time = get_east8_time()
         
         # 处理每一行数据
-        for _, row in df.iterrows():
-            date = row['日期']
-            shift = int(str(row['班次']).replace('班', ''))
-            
-            # 更新或插入备班人员信息
-            c.execute("""
-                SELECT 1 FROM operation_center_duty 
-                WHERE date = ? AND shift = ?
-            """, (date, shift))
-            
-            if c.fetchone():
+        for index, row in df.iterrows():
+            try:
+                # 检查日期格式
+                date = str(row['日期'])
+                if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+                    raise ValueError(f"第{index+1}行日期格式错误: {date}")
+                
+                # 检查班次格式
+                shift_str = str(row['班次'])
+                if not re.match(r'^\d+班$', shift_str):
+                    raise ValueError(f"第{index+1}行班次格式错误: {shift_str}")
+                shift = int(shift_str.replace('班', ''))
+                
+                # 更新或插入固定值班人员信息
                 c.execute("""
-                    UPDATE operation_center_duty 
-                    SET backup_name = ?, backup_phone = ?,
-                        updated_at = ?
+                    SELECT 1 FROM operation_center_fixed_duty WHERE shift = ?
+                """, (shift,))
+                
+                if c.fetchone():
+                    c.execute("""
+                        UPDATE operation_center_fixed_duty 
+                        SET leader_name = ?, leader_phone = ?,
+                            manager_name = ?, manager_phone = ?,
+                            member_name = ?, member_phone = ?,
+                            updated_at = ?
+                        WHERE shift = ?
+                    """, (
+                        str(row['值班领导']),
+                        str(row['领导电话']),
+                        str(row['值班主管']),
+                        str(row['主管电话']),
+                        str(row['值班人员']),
+                        str(row['人员电话']),
+                        current_time,
+                        shift
+                    ))
+                else:
+                    c.execute("""
+                        INSERT INTO operation_center_fixed_duty 
+                        (shift, leader_name, leader_phone, manager_name, 
+                         manager_phone, member_name, member_phone,
+                         created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        shift,
+                        str(row['值班领导']),
+                        str(row['领导电话']),
+                        str(row['值班主管']),
+                        str(row['主管电话']),
+                        str(row['值班人员']),
+                        str(row['人员电话']),
+                        current_time,
+                        current_time
+                    ))
+                
+                # 更新或插入备班人员信息
+                c.execute("""
+                    SELECT 1 FROM operation_center_duty 
                     WHERE date = ? AND shift = ?
-                """, (
-                    row['备班人员'],
-                    row['备班电话'],
-                    current_time,
-                    date,
-                    shift
-                ))
-            else:
-                c.execute("""
-                    INSERT INTO operation_center_duty 
-                    (date, shift, backup_name, backup_phone, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    date,
-                    shift,
-                    row['备班人员'],
-                    row['备班电话'],
-                    current_time,
-                    current_time
-                ))
+                """, (date, shift))
+                
+                if c.fetchone():
+                    c.execute("""
+                        UPDATE operation_center_duty 
+                        SET backup_name = ?, backup_phone = ?,
+                            updated_at = ?
+                        WHERE date = ? AND shift = ?
+                    """, (
+                        str(row['备班人员']),
+                        str(row['备班电话']),
+                        current_time,
+                        date,
+                        shift
+                    ))
+                else:
+                    c.execute("""
+                        INSERT INTO operation_center_duty 
+                        (date, shift, backup_name, backup_phone, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        date,
+                        shift,
+                        str(row['备班人员']),
+                        str(row['备班电话']),
+                        current_time,
+                        current_time
+                    ))
+            except Exception as e:
+                print(f"处理第{index+1}行数据时出错: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"处理第{index+1}行数据时出错: {str(e)}"
+                )
         
         db.commit()
         return {"message": "运营中心值班信息导入成功"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
+        print(f"导入运营中心值班信息错误: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"导入运营中心值班信息失败: {str(e)}"
@@ -1662,6 +1727,61 @@ async def import_operation_center_duty(
 @app.post("/api/logout")
 async def logout():
     return {"message": "登出成功"}
+
+@app.get("/api/operation_center/template")
+async def download_operation_center_template():
+    """下载运营中心值班人员信息导入模板"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "运营中心值班人员"
+    
+    # 设置表头
+    headers = ['日期', '班次', '值班领导', '领导电话', '值班主管', '主管电话', 
+              '值班人员', '人员电话', '备班人员', '备班电话']
+    for col, header in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=header)
+    
+    # 设置示例数据（每个班次3人）
+    example_data = [
+        ['2024-04-01', '一班', '张三、李四、王五', '13800000001、13800000002、13800000003', 
+         '赵六、钱七、孙八', '13800000004、13800000005、13800000006',
+         '周九、吴十、郑十一', '13800000007、13800000008、13800000009',
+         '备班1、备班2、备班3', '13900000001、13900000002、13900000003'],
+        ['2024-04-02', '二班', '张十二、李十三、王十四', '13800000011、13800000012、13800000013',
+         '赵十五、钱十六、孙十七', '13800000014、13800000015、13800000016',
+         '周十八、吴十九、郑二十', '13800000017、13800000018、13800000019',
+         '备班4、备班5、备班6', '13900000004、13900000005、13900000006']
+    ]
+    
+    # 写入示例数据
+    for row, data in enumerate(example_data, 2):
+        for col, value in enumerate(data, 1):
+            ws.cell(row=row, column=col, value=value)
+    
+    # 添加说明行
+    ws.cell(row=4, column=1, value="说明：")
+    ws.cell(row=5, column=1, value="1. 每个班次可以设置多名值班人员，用顿号（、）分隔")
+    ws.cell(row=6, column=1, value="2. 姓名和电话必须一一对应，且数量相同")
+    ws.cell(row=7, column=1, value="3. 备班人员信息为选填项")
+    
+    # 调整列宽
+    for col in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + col)].width = 20
+    
+    # 保存到内存中
+    excel_file = BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+    
+    filename = quote("运营中心值班人员导入模板.xlsx")
+    
+    return StreamingResponse(
+        excel_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn
