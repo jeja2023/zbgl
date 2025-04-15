@@ -15,6 +15,41 @@
             </div>
             <div id="currentTime" class="current-time"></div>
         </div>
+        <div class="operation-center-container">
+            <!-- 操作按钮 -->
+            <div class="operation-center-actions" id="operationCenterActions" style="display: none;">
+                <button id="editOperationDutyBtn" class="edit-btn">编辑</button>
+                <button onclick="document.getElementById('importOperationDutyFile').click()" class="edit-btn">导入</button>
+            </div>
+            <input type="file" id="importOperationDutyFile" style="display: none;" accept=".xlsx,.xls" onchange="importOperationDuty()">
+            
+            <div class="operation-center-duty">
+                <div class="duty-header">
+                    <h3>运营中心值班人员</h3>
+                    <div class="shift-info">当前班次：<span id="currentShift">-</span></div>
+                </div>
+                <div class="duty-info">
+                    <div class="operation-info">
+                        <div class="operation-row">
+                            <div class="operation-label">值班领导：</div>
+                            <div class="operation-value" id="operationLeader">-</div>
+                        </div>
+                        <div class="operation-row">
+                            <div class="operation-label">值班主管：</div>
+                            <div class="operation-value" id="operationManager">-</div>
+                        </div>
+                        <div class="operation-row">
+                            <div class="operation-label">值班人员：</div>
+                            <div class="operation-value" id="operationMember">-</div>
+                        </div>
+                        <div class="operation-row">
+                            <div class="operation-label">备班人员：</div>
+                            <div class="operation-value" id="operationBackup">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <h1>值班信息管理系统</h1>
         
         <div class="controls">
@@ -264,6 +299,142 @@
                         </div>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 运营中心值班信息编辑模态框 -->
+    <div id="editOperationDutyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>编辑运营中心值班信息</h2>
+                <button class="close-button" onclick="hideModal('editOperationDutyModal')">&times;</button>
+            </div>
+            <form id="editOperationDutyForm">
+                <div class="form-group">
+                    <label for="operationShift">班次：</label>
+                    <select id="operationShift" required>
+                        <option value="1">一班</option>
+                        <option value="2">二班</option>
+                        <option value="3">三班</option>
+                        <option value="4">四班</option>
+                    </select>
+                </div>
+                <div class="personnel-group">
+                    <h3>值班领导</h3>
+                    <div id="leaderList" class="personnel-list">
+                        <!-- 值班领导列表 -->
+                    </div>
+                    <button type="button" class="add-personnel-btn" onclick="addPersonnel('leader')">添加值班领导</button>
+                </div>
+                <div class="personnel-group">
+                    <h3>值班主管</h3>
+                    <div id="managerList" class="personnel-list">
+                        <!-- 值班主管列表 -->
+                    </div>
+                    <button type="button" class="add-personnel-btn" onclick="addPersonnel('manager')">添加值班主管</button>
+                </div>
+                <div class="personnel-group">
+                    <h3>值班人员</h3>
+                    <div id="memberList" class="personnel-list">
+                        <!-- 值班人员列表 -->
+                    </div>
+                    <button type="button" class="add-personnel-btn" onclick="addPersonnel('member')">添加值班人员</button>
+                </div>
+                <div class="personnel-group">
+                    <h3>备班人员</h3>
+                    <div id="backupList" class="personnel-list">
+                        <!-- 备班人员列表 -->
+                    </div>
+                    <button type="button" class="add-personnel-btn" onclick="addPersonnel('backup')">添加备班人员</button>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 运营中心值班信息批量编辑模态框 -->
+    <div id="batchEditOperationDutyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>批量编辑运营中心值班信息</h2>
+                <button class="close-button" onclick="hideModal('batchEditOperationDutyModal')">&times;</button>
+            </div>
+            <form id="batchEditOperationDutyForm">
+                <div class="form-group">
+                    <label>选择班次：</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" name="shift" value="1"> 一班</label>
+                        <label><input type="checkbox" name="shift" value="2"> 二班</label>
+                        <label><input type="checkbox" name="shift" value="3"> 三班</label>
+                        <label><input type="checkbox" name="shift" value="4"> 四班</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="batchLeaderName">值班领导姓名</label>
+                    <input type="text" id="batchLeaderName" name="leader_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="batchLeaderPhone">值班领导电话</label>
+                    <input type="text" id="batchLeaderPhone" name="leader_phone" required>
+                </div>
+                <div class="form-group">
+                    <label for="batchManagerName">值班主管姓名</label>
+                    <input type="text" id="batchManagerName" name="manager_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="batchManagerPhone">值班主管电话</label>
+                    <input type="text" id="batchManagerPhone" name="manager_phone" required>
+                </div>
+                <div class="form-group">
+                    <label for="batchMemberName">值班人员姓名</label>
+                    <input type="text" id="batchMemberName" name="member_name" required>
+                </div>
+                <div class="form-group">
+                    <label for="batchMemberPhone">值班人员电话</label>
+                    <input type="text" id="batchMemberPhone" name="member_phone" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 运营中心值班历史记录查询模态框 -->
+    <div id="operationDutyHistoryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>运营中心值班历史记录</h2>
+                <button class="close-button" onclick="hideModal('operationDutyHistoryModal')">&times;</button>
+            </div>
+            <form id="operationDutyHistoryForm">
+                <div class="form-group">
+                    <label for="historyStartDate">开始日期</label>
+                    <input type="date" id="historyStartDate" name="start_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="historyEndDate">结束日期</label>
+                    <input type="date" id="historyEndDate" name="end_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="historyShift">班次</label>
+                    <select id="historyShift" name="shift">
+                        <option value="">全部班次</option>
+                        <option value="1">一班</option>
+                        <option value="2">二班</option>
+                        <option value="3">三班</option>
+                        <option value="4">四班</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">查询</button>
+                </div>
+            </form>
+            <div id="operationDutyHistoryTable" class="history-table">
+                <!-- 历史记录表格 -->
             </div>
         </div>
     </div>

@@ -825,6 +825,7 @@ button#logoutBtn:hover {
     z-index: 1000;
     width: 180px;
     border: 1px solid #e9ecef;
+    margin-bottom: 20px;  /* 添加底部间距 */
 }
 
 .date-display {
@@ -855,4 +856,275 @@ button#logoutBtn:hover {
     font-family: monospace;
     font-weight: bold;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* 运营中心值班人员信息样式 */
+.operation-info {
+    margin: 5px 0;
+}
+
+.operation-row {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.operation-label {
+    display: block;
+    color: #333;
+    font-weight: bold;
+    font-size: 12px;
+    margin-bottom: 2px;
+}
+
+.operation-value {
+    display: block;
+    color: #666;
+    font-size: 12px;
+    margin-left: 0;
+}
+
+#operationLeader,
+#operationManager,
+#operationMember,
+#operationBackup {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#operationLeader div,
+#operationManager div,
+#operationMember div,
+#operationBackup div {
+    margin-bottom: 2px;
+    display: block;
+}
+
+/* 运营中心值班人员信息容器样式 */
+.operation-center-container {
+    position: fixed;
+    left: 20px;
+    top: 210px;
+    z-index: 1000;
+    width: 180px;
+}
+
+.operation-center-duty {
+    background-color: #f8f9fa;
+    padding: 8px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e9ecef;
+}
+
+.operation-center-duty h3 {
+    font-size: 14px;
+    color: #2c3e50;
+    margin: 0 0 6px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.shift-info {
+    font-size: 12px;
+    color: #6c757d;
+    margin-bottom: 6px;
+}
+
+.duty-info {
+    font-size: 12px;
+}
+
+.duty-item {
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+/* 运营中心值班信息操作按钮样式 */
+.operation-center-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.operation-center-actions .edit-btn {
+    padding: 8px 12px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+    min-width: 80px;
+    text-align: center;
+}
+
+.operation-center-actions .edit-btn:hover {
+    background-color: #45a049;
+}
+
+.operation-center-actions .edit-btn:active {
+    background-color: #3d8b40;
+}
+
+/* 运营中心值班信息编辑模态框样式 */
+#editOperationDutyModal .modal-content {
+    max-width: 800px;
+    width: 90%;
+}
+
+#editOperationDutyModal .personnel-group {
+    margin-bottom: 20px;
+}
+
+#editOperationDutyModal .personnel-group h3 {
+    margin-bottom: 10px;
+    color: #333;
+}
+
+#editOperationDutyModal .personnel-list {
+    margin-bottom: 10px;
+}
+
+#editOperationDutyModal .personnel-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 10px;
+}
+
+#editOperationDutyModal .personnel-item input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+#editOperationDutyModal .delete-personnel-btn {
+    padding: 8px 12px;
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#editOperationDutyModal .delete-personnel-btn:hover {
+    background-color: #c82333;
+}
+
+#editOperationDutyModal .add-personnel-btn {
+    padding: 8px 12px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#editOperationDutyModal .add-personnel-btn:hover {
+    background-color: #218838;
+}
+
+#editOperationDutyModal .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #ddd;
+}
+
+#editOperationDutyModal .form-actions button {
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#editOperationDutyModal .form-actions button:hover {
+    background-color: #0056b3;
+}
+
+/* 批量编辑模态框样式 */
+#batchEditOperationDutyModal .modal-content {
+    max-width: 600px;
+}
+
+#batchEditOperationDutyModal .checkbox-group {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+#batchEditOperationDutyModal .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+/* 历史记录查询模态框样式 */
+#operationDutyHistoryModal .modal-content {
+    max-width: 1000px;
+    width: 90%;
+}
+
+#operationDutyHistoryModal .history-table {
+    margin-top: 20px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+#operationDutyHistoryModal table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#operationDutyHistoryModal th,
+#operationDutyHistoryModal td {
+    padding: 8px;
+    border: 1px solid #ddd;
+    text-align: center;
+}
+
+#operationDutyHistoryModal th {
+    background-color: #f8f9fa;
+    position: sticky;
+    top: 0;
+}
+
+#operationDutyHistoryModal tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+#operationDutyHistoryModal tr:hover {
+    background-color: #f1f1f1;
+}
+
+/* 导入导出按钮样式 */
+#importOperationDutyFile {
+    display: none;
+}
+
+.duty-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.duty-actions .edit-btn {
+    padding: 5px 10px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.duty-actions .edit-btn:hover {
+    background-color: #45a049;
 } 

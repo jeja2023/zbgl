@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, status, Form, UploadFile, F
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, List
@@ -17,12 +17,25 @@ import pandas as pd
 import io
 import tempfile
 import secrets
+import xlsxwriter
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
 # 自动生成 SECRET_KEY
 SECRET_KEY = secrets.token_hex(32)
-print(f"Generated new SECRET_KEY: {SECRET_KEY}")
+logger.info(f"Generated new SECRET_KEY: {SECRET_KEY}")
 
 # 配置CORS
 app.add_middleware(
@@ -47,6 +60,141 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE = str(BASE_DIR / "duty_system.db")
 
+# 数据库连接参数
+DB_PARAMS = {
+    "check_same_thread": False,
+    "timeout": 30,
+    "isolation_level": None,  # 自动提交模式
+    "cached_statements": 100,  # 缓存SQL语句
+    "uri": True  # 启用URI模式
+}
+
+# 数据库连接
+def get_db():
+    try:
+        conn = sqlite3.connect(f"file:{DATABASE}?cache=shared", **DB_PARAMS)
+        conn.row_factory = sqlite3.Row
+        yield conn
+    except sqlite3.Error as e:
+        logger.error(f"Database connection error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database connection error"
+        )
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# 初始化数据库
+def init_db():
+    try:
+        with sqlite3.connect(f"file:{DATABASE}?cache=shared", **DB_PARAMS) as conn:
+            cursor = conn.cursor()
+            
+            # 创建用户表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # 创建用户表索引
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+            
+            # 创建值班信息表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS duty_info (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    department TEXT NOT NULL,
+                    leader_name TEXT,
+                    leader_phone TEXT,
+                    manager_name TEXT,
+                    manager_phone TEXT,
+                    member_name TEXT,
+                    member_phone TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(date, department)
+                )
+            """)
+            
+            # 创建值班信息表索引
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_info_date ON duty_info(date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_info_department ON duty_info(department)")
+            
+            # 创建运营中心固定值班人员表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS operation_center_fixed_duty (
+                    shift INTEGER PRIMARY KEY,
+                    leader_name TEXT,
+                    leader_phone TEXT,
+                    manager_name TEXT,
+                    manager_phone TEXT,
+                    member_name TEXT,
+                    member_phone TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # 创建运营中心值班人员表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS operation_center_duty (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    shift INTEGER NOT NULL,
+                    backup_name TEXT,
+                    backup_phone TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(date, shift)
+                )
+            """)
+            
+            # 创建运营中心值班人员表索引
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_operation_center_duty_date ON operation_center_duty(date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_operation_center_duty_shift ON operation_center_duty(shift)")
+            
+            # 创建值班历史记录表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS duty_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    department TEXT NOT NULL,
+                    shift INTEGER,
+                    leader_name TEXT,
+                    leader_phone TEXT,
+                    manager_name TEXT,
+                    manager_phone TEXT,
+                    member_name TEXT,
+                    member_phone TEXT,
+                    backup_name TEXT,
+                    backup_phone TEXT,
+                    operation TEXT NOT NULL,
+                    operator TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # 创建值班历史记录表索引
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_history_date ON duty_history(date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_history_department ON duty_history(department)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_duty_history_shift ON duty_history(shift)")
+            
+            conn.commit()
+            logger.info("Database initialized successfully")
+    except sqlite3.Error as e:
+        logger.error(f"Database initialization error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database initialization error"
+        )
+
 # 获取东八区时间
 def get_east8_time():
     """获取东八区时间"""
@@ -54,110 +202,38 @@ def get_east8_time():
     east8_time = utc_now + timedelta(hours=8)
     return east8_time.strftime("%Y-%m-%d %H:%M:%S")
 
-def init_db():
-    """初始化数据库"""
-    # 检查数据库文件是否存在
-    if os.path.exists(DATABASE):
-        print("数据库已存在，跳过初始化")
-        return
-        
-    print("数据库不存在，开始初始化...")
-    conn = None
-    try:
-        conn = sqlite3.connect(DATABASE, check_same_thread=False)
-        cursor = conn.cursor()
-        
-        # 创建用户表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                username TEXT PRIMARY KEY,
-                password TEXT NOT NULL,
-                department TEXT,
-                is_admin INTEGER DEFAULT 0,
-                created_at TEXT,
-                updated_at TEXT
-            )
-        """)
-        
-        # 创建值班信息表
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS duty_info (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                department TEXT NOT NULL,
-                leader_name TEXT,
-                leader_phone TEXT,
-                manager_name TEXT,
-                manager_phone TEXT,
-                member_name TEXT,
-                member_phone TEXT,
-                created_at TEXT,
-                updated_at TEXT,
-                UNIQUE(date, department)
-            )
-        """)
-        
-        # 检查是否已存在管理员账户
-        cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'admin'")
-        admin_exists = cursor.fetchone()[0] > 0
-        
-        if not admin_exists:
-            # 创建默认管理员用户
-            hashed_password = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
-            current_time = get_east8_time()
-            cursor.execute("""
-                INSERT INTO users (username, password, is_admin, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, ("admin", hashed_password, 1, current_time, current_time))
-            print("已创建默认管理员账户")
-        
-        conn.commit()
-        print("数据库初始化完成")
-    except sqlite3.Error as e:
-        print(f"数据库初始化错误: {str(e)}")
-        raise
-    finally:
-        if conn:
-            conn.close()
-
-# 初始化数据库
-init_db()
-
 # 工具函数
-def get_db():
-    conn = sqlite3.connect(DATABASE, check_same_thread=False, timeout=30)
-    try:
-        yield conn
-    finally:
-        conn.close()
-
 def verify_password(plain_password, hashed_password):
     try:
-        # 确保 hashed_password 是字节类型
         if isinstance(hashed_password, str):
             hashed_password = hashed_password.encode()
         return bcrypt.checkpw(plain_password.encode(), hashed_password)
+    except (ValueError, TypeError) as e:
+        logger.error(f"Password verification error: Invalid password format - {str(e)}")
+        return False
     except Exception as e:
-        print(f"Password verification error: {str(e)}")
+        logger.error(f"Password verification error: Unexpected error - {str(e)}")
         return False
 
 def get_user(username: str):
     try:
-        conn = sqlite3.connect(DATABASE, check_same_thread=False)
-        c = conn.cursor()
-        c.execute("SELECT username, password, department, is_admin FROM users WHERE username = ?", (username,))
-        user = c.fetchone()
-        conn.close()
-        if user:
-            return UserInDB(
-                username=user[0],
-                password=user[1],
-                department=user[2],
-                is_admin=bool(user[3])
-            )
+        with sqlite3.connect(f"file:{DATABASE}?cache=shared", **DB_PARAMS) as conn:
+            c = conn.cursor()
+            c.execute("SELECT username, password, department, is_admin FROM users WHERE username = ?", (username,))
+            user = c.fetchone()
+            if user:
+                return UserInDB(
+                    username=user[0],
+                    password=user[1],
+                    department=user[2],
+                    is_admin=bool(user[3])
+                )
+            return None
+    except sqlite3.Error as e:
+        logger.error(f"Database error in get_user: {str(e)}")
         return None
     except Exception as e:
-        print(f"Error in get_user: {str(e)}")
+        logger.error(f"Unexpected error in get_user: {str(e)}")
         return None
 
 # 模型定义
@@ -175,15 +251,42 @@ class Token(BaseModel):
 
 class DutyInfo(BaseModel):
     department: str
-    date: date
+    date: str
     leader_name: Optional[str] = None
     leader_phone: Optional[str] = None
     manager_name: Optional[str] = None
     manager_phone: Optional[str] = None
     member_name: Optional[str] = None
     member_phone: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+
+class OperationCenterDuty(BaseModel):
+    date: str
+    shift: int
+    backup_name: Optional[str] = None
+    backup_phone: Optional[str] = None
+
+class OperationCenterFixedDuty(BaseModel):
+    shift: int
+    leader_name: str
+    leader_phone: str
+    manager_name: str
+    manager_phone: str
+    member_name: str
+    member_phone: str
+
+class OperationCenterDutyHistory(BaseModel):
+    start_date: str
+    end_date: str
+    shift: Optional[int] = None
+
+class OperationCenterDutyBatch(BaseModel):
+    shifts: List[int]
+    leader_name: str
+    leader_phone: str
+    manager_name: str
+    manager_phone: str
+    member_name: str
+    member_phone: str
 
 # 安全配置
 ALGORITHM = "HS256"
@@ -194,12 +297,15 @@ def authenticate_user(username: str, password: str):
     try:
         user = get_user(username)
         if not user:
+            logger.warning(f"Authentication failed: User {username} not found")
             return False
         if not verify_password(password, user.password):
+            logger.warning(f"Authentication failed: Invalid password for user {username}")
             return False
+        logger.info(f"User {username} authenticated successfully")
         return user
     except Exception as e:
-        print(f"Authentication error: {str(e)}")
+        logger.error(f"Authentication error: {str(e)}")
         return False
 
 def create_access_token(data: dict):
@@ -207,7 +313,7 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: sqlite3.Connection = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="无效的认证凭据",
@@ -221,10 +327,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except jwt.JWTError:
         raise credentials_exception
     
-    conn = None
     try:
-        conn = sqlite3.connect(DATABASE, check_same_thread=False)
-        cursor = conn.cursor()
+        cursor = db.cursor()
         cursor.execute("SELECT username, department, is_admin FROM users WHERE username = ?", (username,))
         user = cursor.fetchone()
         if user is None:
@@ -232,9 +336,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         return User(username=user[0], department=user[1], is_admin=bool(user[2]))
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"数据库错误: {str(e)}")
-    finally:
-        if conn:
-            conn.close()
 
 # API路由
 @app.post("/token")
@@ -370,7 +471,7 @@ async def create_duty_info(
         c.execute("""
             SELECT COUNT(*) FROM duty_info 
             WHERE date = ? AND department = ?
-        """, (duty_info.date.isoformat(), duty_info.department))
+        """, (duty_info.date, duty_info.department))
         
         count = c.fetchone()[0]
         current_time = datetime.now().isoformat()
@@ -392,7 +493,7 @@ async def create_duty_info(
                 duty_info.member_name,
                 duty_info.member_phone,
                 current_time,
-                duty_info.date.isoformat(),
+                duty_info.date,
                 duty_info.department
             ))
         else:
@@ -404,7 +505,7 @@ async def create_duty_info(
                  created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                duty_info.date.isoformat(),
+                duty_info.date,
                 duty_info.department,
                 duty_info.leader_name,
                 duty_info.leader_phone,
@@ -479,11 +580,10 @@ async def read_root(request: Request):
 
 # 部门管理API
 @app.get("/api/departments")
-async def get_departments():
+async def get_departments(db: sqlite3.Connection = Depends(get_db)):
     """获取所有部门列表"""
     try:
-        conn = sqlite3.connect(DATABASE, check_same_thread=False)
-        cursor = conn.cursor()
+        cursor = db.cursor()
         cursor.execute("""
             SELECT DISTINCT department 
             FROM duty_info 
@@ -733,22 +833,20 @@ class UserUpdate(BaseModel):
 
 # 用户管理API
 @app.get("/api/users", response_model=List[User])
-async def get_users(current_user: User = Depends(get_current_user)):
+async def get_users(
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="没有权限访问")
     
-    conn = None
     try:
-        conn = sqlite3.connect(DATABASE, check_same_thread=False)
-        cursor = conn.cursor()
+        cursor = db.cursor()
         cursor.execute("SELECT username, department, is_admin FROM users")
         users = [{"username": row[0], "department": row[1], "is_admin": bool(row[2])} for row in cursor.fetchall()]
         return users
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"数据库错误: {str(e)}")
-    finally:
-        if conn:
-            conn.close()
 
 @app.get("/api/users/{username}", response_model=User)
 async def get_user(username: str, current_user: User = Depends(get_current_user)):
@@ -764,14 +862,16 @@ async def get_user(username: str, current_user: User = Depends(get_current_user)
     return {"username": user[0], "department": user[1], "is_admin": bool(user[2])}
 
 @app.post("/api/users")
-async def create_user(user: UserCreate, current_user: User = Depends(get_current_user)):
+async def create_user(
+    user: UserCreate,
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="没有权限创建用户")
     
-    conn = None
     try:
-        conn = sqlite3.connect(DATABASE, check_same_thread=False)
-        cursor = conn.cursor()
+        cursor = db.cursor()
         
         # 检查用户名是否已存在
         cursor.execute("SELECT username FROM users WHERE username = ?", (user.username,))
@@ -786,15 +886,11 @@ async def create_user(user: UserCreate, current_user: User = Depends(get_current
             VALUES (?, ?, ?, ?, ?, ?)
         """, (user.username, hashed_password, user.department, user.is_admin, current_time, current_time))
         
-        conn.commit()
+        db.commit()
         return {"message": "用户创建成功"}
     except sqlite3.Error as e:
-        if conn:
-            conn.rollback()
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"数据库错误: {str(e)}")
-    finally:
-        if conn:
-            conn.close()
 
 @app.put("/api/users/{username}")
 async def update_user(username: str, user: UserUpdate, current_user: User = Depends(get_current_user)):
@@ -942,99 +1038,74 @@ async def change_password(
 async def import_duty_info(
     file: UploadFile = File(...),
     date: str = Form(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
 ):
     if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="没有权限导入数据")
+        raise HTTPException(status_code=403, detail="没有权限导入值班信息")
     
     try:
-        # 读取文件内容
-        content = await file.read()
+        # 读取 Excel 文件
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
         
-        # 根据文件类型读取数据
-        if file.filename.endswith('.xlsx') or file.filename.endswith('.xls'):
-            df = pd.read_excel(io.BytesIO(content))
-        elif file.filename.endswith('.csv'):
-            df = pd.read_csv(io.BytesIO(content))
-        else:
-            raise HTTPException(status_code=400, detail="不支持的文件格式")
+        cursor = db.cursor()
         
-        # 验证数据格式
-        required_columns = ['部门', '值班领导姓名', '值班领导电话', '值班经理姓名', '值班经理电话', '值班人员姓名', '值班人员电话']
-        if not all(col in df.columns for col in required_columns):
-            raise HTTPException(status_code=400, detail="文件格式不正确，请确保包含所有必要列")
-            
-        # 确保手机号码列为字符串类型
-        phone_columns = ['值班领导电话', '值班经理电话', '值班人员电话']
-        for col in phone_columns:
-            df[col] = df[col].astype(str).apply(lambda x: x.replace('.0', '') if x != 'nan' else '')
+        # 开始事务
+        cursor.execute("BEGIN TRANSACTION")
         
-        conn = None
-        try:
-            conn = sqlite3.connect(DATABASE, check_same_thread=False)
-            cursor = conn.cursor()
+        # 遍历数据并插入
+        for _, row in df.iterrows():
+            department = row['部门']
+            leader_name = row['值班领导姓名']
+            leader_phone = row['值班领导电话']
+            manager_name = row['值班经理姓名']
+            manager_phone = row['值班经理电话']
+            member_name = row['值班人员姓名']
+            member_phone = row['值班人员电话']
             
-            # 开始事务
-            cursor.execute("BEGIN TRANSACTION")
+            # 检查是否已存在该日期的值班信息
+            cursor.execute("""
+                SELECT 1 FROM duty_info 
+                WHERE department = ? AND date = ?
+            """, (department, date))
             
-            # 遍历数据并插入
-            for _, row in df.iterrows():
-                department = row['部门']
-                leader_name = row['值班领导姓名']
-                leader_phone = row['值班领导电话']
-                manager_name = row['值班经理姓名']
-                manager_phone = row['值班经理电话']
-                member_name = row['值班人员姓名']
-                member_phone = row['值班人员电话']
-                
-                # 检查是否已存在该日期的值班信息
+            if cursor.fetchone():
+                # 更新现有记录
                 cursor.execute("""
-                    SELECT 1 FROM duty_info 
+                    UPDATE duty_info 
+                    SET leader_name = ?, leader_phone = ?,
+                        manager_name = ?, manager_phone = ?,
+                        member_name = ?, member_phone = ?,
+                        updated_at = ?
                     WHERE department = ? AND date = ?
-                """, (department, date))
-                
-                if cursor.fetchone():
-                    # 更新现有记录
-                    cursor.execute("""
-                        UPDATE duty_info 
-                        SET leader_name = ?, leader_phone = ?,
-                            manager_name = ?, manager_phone = ?,
-                            member_name = ?, member_phone = ?,
-                            updated_at = ?
-                        WHERE department = ? AND date = ?
-                    """, (
-                        leader_name, leader_phone,
-                        manager_name, manager_phone,
-                        member_name, member_phone,
-                        get_east8_time(),
-                        department, date
-                    ))
-                else:
-                    # 插入新记录
-                    cursor.execute("""
-                        INSERT INTO duty_info (
-                            department, date, leader_name, leader_phone,
-                            manager_name, manager_phone, member_name, member_phone,
-                            created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
+                """, (
+                    leader_name, leader_phone,
+                    manager_name, manager_phone,
+                    member_name, member_phone,
+                    get_east8_time(),
+                    department, date
+                ))
+            else:
+                # 插入新记录
+                cursor.execute("""
+                    INSERT INTO duty_info (
                         department, date, leader_name, leader_phone,
                         manager_name, manager_phone, member_name, member_phone,
-                        get_east8_time(), get_east8_time()
-                    ))
-            
-            # 提交事务
-            conn.commit()
-            return {"message": "导入成功"}
-            
-        except sqlite3.Error as e:
-            if conn:
-                conn.rollback()
-            raise HTTPException(status_code=500, detail=f"数据库错误: {str(e)}")
-        finally:
-            if conn:
-                conn.close()
-                
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    department, date, leader_name, leader_phone,
+                    manager_name, manager_phone, member_name, member_phone,
+                    get_east8_time(), get_east8_time()
+                ))
+        
+        # 提交事务
+        db.commit()
+        return {"message": "导入成功"}
+    except sqlite3.Error as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"数据库错误: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
@@ -1121,6 +1192,476 @@ async def export_template(current_user: User = Depends(get_current_user)):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出模板失败: {str(e)}")
+
+# 创建一个不需要认证的依赖
+async def get_db_without_auth():
+    conn = sqlite3.connect(DATABASE, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+@app.get("/api/operation-center-duty")
+async def get_operation_center_duty(
+    date: str,
+    db: sqlite3.Connection = Depends(get_db_without_auth)
+):
+    """获取运营中心值班人员信息"""
+    try:
+        c = db.cursor()
+        # 获取固定值班人员信息
+        c.execute("""
+            SELECT shift, leader_name, leader_phone, manager_name, manager_phone,
+                   member_name, member_phone
+            FROM operation_center_fixed_duty
+            ORDER BY shift
+        """)
+        fixed_duty = {}
+        for row in c.fetchall():
+            fixed_duty[row[0]] = {
+                "leader_name": row[1],
+                "leader_phone": row[2],
+                "manager_name": row[3],
+                "manager_phone": row[4],
+                "member_name": row[5],
+                "member_phone": row[6]
+            }
+        
+        # 获取备班人员信息
+        c.execute("""
+            SELECT shift, backup_name, backup_phone
+            FROM operation_center_duty
+            WHERE date = ?
+        """, (date,))
+        backup_duty = {}
+        for row in c.fetchall():
+            backup_duty[row[0]] = {
+                "backup_name": row[1],
+                "backup_phone": row[2]
+            }
+        
+        # 合并信息
+        result = {}
+        for shift in range(1, 5):
+            if shift in fixed_duty:
+                result[shift] = {
+                    **fixed_duty[shift],
+                    "backup_name": backup_duty.get(shift, {}).get("backup_name", ""),
+                    "backup_phone": backup_duty.get(shift, {}).get("backup_phone", "")
+                }
+        
+        return result
+    except Exception as e:
+        print(f"获取运营中心值班信息错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/operation-center-duty")
+async def create_operation_center_duty(
+    duty_info: OperationCenterDuty,
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """创建或更新运营中心值班人员信息"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限修改运营中心值班信息"
+        )
+    
+    try:
+        c = db.cursor()
+        # 检查记录是否存在
+        c.execute("""
+            SELECT 1 FROM operation_center_duty 
+            WHERE date = ? AND shift = ?
+        """, (duty_info.date, duty_info.shift))
+        
+        if c.fetchone():
+            # 更新现有记录
+            c.execute("""
+                UPDATE operation_center_duty 
+                SET backup_name = ?, backup_phone = ?,
+                    updated_at = ?
+                WHERE date = ? AND shift = ?
+            """, (
+                duty_info.backup_name,
+                duty_info.backup_phone,
+                get_east8_time(),
+                duty_info.date,
+                duty_info.shift
+            ))
+        else:
+            # 插入新记录
+            c.execute("""
+                INSERT INTO operation_center_duty 
+                (date, shift, backup_name, backup_phone, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                duty_info.date,
+                duty_info.shift,
+                duty_info.backup_name,
+                duty_info.backup_phone,
+                get_east8_time(),
+                get_east8_time()
+            ))
+        
+        db.commit()
+        return {"message": "运营中心值班信息更新成功"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新运营中心值班信息失败: {str(e)}"
+        )
+
+@app.post("/api/operation-center-fixed-duty")
+async def create_operation_center_fixed_duty(
+    duty_info: OperationCenterFixedDuty,
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """创建或更新运营中心固定值班人员信息"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限修改运营中心固定值班信息"
+        )
+    
+    try:
+        c = db.cursor()
+        # 检查记录是否存在
+        c.execute("SELECT 1 FROM operation_center_fixed_duty WHERE shift = ?", (duty_info.shift,))
+        
+        if c.fetchone():
+            # 更新现有记录
+            c.execute("""
+                UPDATE operation_center_fixed_duty 
+                SET leader_name = ?, leader_phone = ?,
+                    manager_name = ?, manager_phone = ?,
+                    member_name = ?, member_phone = ?,
+                    updated_at = ?
+                WHERE shift = ?
+            """, (
+                duty_info.leader_name,
+                duty_info.leader_phone,
+                duty_info.manager_name,
+                duty_info.manager_phone,
+                duty_info.member_name,
+                duty_info.member_phone,
+                get_east8_time(),
+                duty_info.shift
+            ))
+        else:
+            # 插入新记录
+            c.execute("""
+                INSERT INTO operation_center_fixed_duty 
+                (shift, leader_name, leader_phone, manager_name, 
+                 manager_phone, member_name, member_phone,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                duty_info.shift,
+                duty_info.leader_name,
+                duty_info.leader_phone,
+                duty_info.manager_name,
+                duty_info.manager_phone,
+                duty_info.member_name,
+                duty_info.member_phone,
+                get_east8_time(),
+                get_east8_time()
+            ))
+        
+        db.commit()
+        return {"message": "运营中心固定值班信息更新成功"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新运营中心固定值班信息失败: {str(e)}"
+        )
+
+@app.get("/api/operation-center-duty/history")
+async def get_operation_center_duty_history(
+    start_date: str,
+    end_date: str,
+    shift: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """获取运营中心值班历史记录"""
+    try:
+        c = db.cursor()
+        query = """
+            SELECT date, shift, backup_name, backup_phone, created_at, updated_at
+            FROM operation_center_duty
+            WHERE date BETWEEN ? AND ?
+        """
+        params = [start_date, end_date]
+        
+        if shift:
+            query += " AND shift = ?"
+            params.append(shift)
+        
+        query += " ORDER BY date DESC, shift"
+        
+        c.execute(query, params)
+        history = []
+        for row in c.fetchall():
+            # 获取对应班次的固定值班人员信息
+            c.execute("""
+                SELECT leader_name, leader_phone, manager_name, manager_phone,
+                       member_name, member_phone
+                FROM operation_center_fixed_duty
+                WHERE shift = ?
+            """, (row[1],))
+            fixed_duty = c.fetchone()
+            
+            if fixed_duty:
+                history.append({
+                    "date": row[0],
+                    "shift": row[1],
+                    "leader_name": fixed_duty[0],
+                    "leader_phone": fixed_duty[1],
+                    "manager_name": fixed_duty[2],
+                    "manager_phone": fixed_duty[3],
+                    "member_name": fixed_duty[4],
+                    "member_phone": fixed_duty[5],
+                    "backup_name": row[2],
+                    "backup_phone": row[3],
+                    "created_at": row[4],
+                    "updated_at": row[5]
+                })
+        
+        return history
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取运营中心值班历史记录失败: {str(e)}"
+        )
+
+@app.post("/api/operation-center-duty/batch")
+async def batch_update_operation_center_duty(
+    duty_info: OperationCenterDutyBatch,
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """批量更新运营中心固定值班人员信息"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限修改运营中心固定值班信息"
+        )
+    
+    try:
+        c = db.cursor()
+        current_time = get_east8_time()
+        
+        for shift in duty_info.shifts:
+            c.execute("""
+                SELECT 1 FROM operation_center_fixed_duty WHERE shift = ?
+            """, (shift,))
+            
+            if c.fetchone():
+                c.execute("""
+                    UPDATE operation_center_fixed_duty 
+                    SET leader_name = ?, leader_phone = ?,
+                        manager_name = ?, manager_phone = ?,
+                        member_name = ?, member_phone = ?,
+                        updated_at = ?
+                    WHERE shift = ?
+                """, (
+                    duty_info.leader_name,
+                    duty_info.leader_phone,
+                    duty_info.manager_name,
+                    duty_info.manager_phone,
+                    duty_info.member_name,
+                    duty_info.member_phone,
+                    current_time,
+                    shift
+                ))
+            else:
+                c.execute("""
+                    INSERT INTO operation_center_fixed_duty 
+                    (shift, leader_name, leader_phone, manager_name, 
+                     manager_phone, member_name, member_phone,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    shift,
+                    duty_info.leader_name,
+                    duty_info.leader_phone,
+                    duty_info.manager_name,
+                    duty_info.manager_phone,
+                    duty_info.member_name,
+                    duty_info.member_phone,
+                    current_time,
+                    current_time
+                ))
+        
+        db.commit()
+        return {"message": "运营中心固定值班信息批量更新成功"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新运营中心固定值班信息失败: {str(e)}"
+        )
+
+@app.get("/api/operation-center-duty/export")
+async def export_operation_center_duty(
+    start_date: str,
+    end_date: str,
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """导出运营中心值班信息"""
+    try:
+        c = db.cursor()
+        # 获取固定值班人员信息
+        c.execute("""
+            SELECT shift, leader_name, leader_phone, manager_name, manager_phone,
+                   member_name, member_phone
+            FROM operation_center_fixed_duty
+            ORDER BY shift
+        """)
+        fixed_duty = {}
+        for row in c.fetchall():
+            fixed_duty[row[0]] = {
+                "leader_name": row[1],
+                "leader_phone": row[2],
+                "manager_name": row[3],
+                "manager_phone": row[4],
+                "member_name": row[5],
+                "member_phone": row[6]
+            }
+        
+        # 获取备班人员信息
+        c.execute("""
+            SELECT date, shift, backup_name, backup_phone
+            FROM operation_center_duty
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date, shift
+        """, (start_date, end_date))
+        
+        # 创建 Excel 文件
+        output = io.BytesIO()
+        workbook = xlsxwriter.Workbook(output)
+        worksheet = workbook.add_worksheet()
+        
+        # 设置表头
+        headers = ['日期', '班次', '值班领导', '领导电话', '值班主管', '主管电话',
+                  '值班人员', '人员电话', '备班人员', '备班电话']
+        for col, header in enumerate(headers):
+            worksheet.write(0, col, header)
+        
+        # 写入数据
+        row = 1
+        for record in c.fetchall():
+            date = record[0]
+            shift = record[1]
+            fixed_info = fixed_duty.get(shift, {})
+            
+            worksheet.write(row, 0, date)
+            worksheet.write(row, 1, f"{shift}班")
+            worksheet.write(row, 2, fixed_info.get('leader_name', ''))
+            worksheet.write(row, 3, fixed_info.get('leader_phone', ''))
+            worksheet.write(row, 4, fixed_info.get('manager_name', ''))
+            worksheet.write(row, 5, fixed_info.get('manager_phone', ''))
+            worksheet.write(row, 6, fixed_info.get('member_name', ''))
+            worksheet.write(row, 7, fixed_info.get('member_phone', ''))
+            worksheet.write(row, 8, record[2] or '')
+            worksheet.write(row, 9, record[3] or '')
+            row += 1
+        
+        workbook.close()
+        output.seek(0)
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename=operation_center_duty_{start_date}_{end_date}.xlsx"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导出运营中心值班信息失败: {str(e)}"
+        )
+
+@app.post("/api/operation-center-duty/import")
+async def import_operation_center_duty(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db)
+):
+    """导入运营中心值班信息"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="没有权限导入运营中心值班信息"
+        )
+    
+    try:
+        # 读取 Excel 文件
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+        
+        c = db.cursor()
+        current_time = get_east8_time()
+        
+        # 处理每一行数据
+        for _, row in df.iterrows():
+            date = row['日期']
+            shift = int(str(row['班次']).replace('班', ''))
+            
+            # 更新或插入备班人员信息
+            c.execute("""
+                SELECT 1 FROM operation_center_duty 
+                WHERE date = ? AND shift = ?
+            """, (date, shift))
+            
+            if c.fetchone():
+                c.execute("""
+                    UPDATE operation_center_duty 
+                    SET backup_name = ?, backup_phone = ?,
+                        updated_at = ?
+                    WHERE date = ? AND shift = ?
+                """, (
+                    row['备班人员'],
+                    row['备班电话'],
+                    current_time,
+                    date,
+                    shift
+                ))
+            else:
+                c.execute("""
+                    INSERT INTO operation_center_duty 
+                    (date, shift, backup_name, backup_phone, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    date,
+                    shift,
+                    row['备班人员'],
+                    row['备班电话'],
+                    current_time,
+                    current_time
+                ))
+        
+        db.commit()
+        return {"message": "运营中心值班信息导入成功"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导入运营中心值班信息失败: {str(e)}"
+        )
+
+# 登出接口
+@app.post("/api/logout")
+async def logout():
+    return {"message": "登出成功"}
 
 if __name__ == "__main__":
     import uvicorn

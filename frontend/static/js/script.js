@@ -99,6 +99,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // 检查登录状态并恢复用户信息
+    const token = localStorage.getItem('token');
+    if (token) {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            currentUser = {
+                username: payload.sub,
+                is_admin: payload.is_admin,
+                department: payload.department
+            };
+            isLoggedIn = true;
+        } catch (e) {
+            console.error('解析token失败:', e);
+            localStorage.removeItem('token');
+            currentUser = null;
+            isLoggedIn = false;
+        }
+    }
+    
     // 加载初始数据
     loadDutyInfo(today);
     loadDepartments();
@@ -110,23 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 显示日期时间控件
     updateDateTimeControls();
     
-    // 检查登录状态
-    const token = localStorage.getItem('token');
-    if (token) {
-        try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            currentUser = {
-                username: payload.username,
-                is_admin: payload.is_admin,
-                department: payload.department
-            };
-            updateUI();
-        } catch (error) {
-            console.error('解析token失败:', error);
-            localStorage.removeItem('token');
-        }
-    }
-
+    // 更新UI状态
+    updateUI();
+    
     // 事件监听器
     if (loginBtn) loginBtn.addEventListener('click', () => showModal('loginModal'));
     if (closeLoginBtn) closeLoginBtn.addEventListener('click', () => hideModal('loginModal'));
@@ -170,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     hideModal('loginModal');
                     updateUI();
+                    checkLoginStatus();
                     
                     // 重新加载数据
                     const dateInputElement = document.getElementById('date');
@@ -439,6 +445,239 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importBtn) importBtn.addEventListener('click', importDutyInfo);
     if (exportBtn) exportBtn.addEventListener('click', exportDutyInfo);
     if (downloadTemplateBtn) downloadTemplateBtn.addEventListener('click', downloadTemplate);
+
+    // 运营中心值班信息编辑相关
+    document.getElementById('editOperationDutyBtn').addEventListener('click', async function() {
+        try {
+            // 获取当前日期和班次
+            const currentShift = getCurrentShift(currentDate);
+            
+            // 获取当前值班信息
+            const response = await fetch(`/api/operation-center-duty?date=${currentDate}`);
+            
+            if (!response.ok) {
+                throw new Error('获取运营中心值班信息失败');
+            }
+            
+            const data = await response.json();
+            
+            // 设置当前班次
+            document.getElementById('operationShift').value = currentShift;
+            
+            // 清空所有人员列表
+            document.getElementById('leaderList').innerHTML = '';
+            document.getElementById('managerList').innerHTML = '';
+            document.getElementById('memberList').innerHTML = '';
+            document.getElementById('backupList').innerHTML = '';
+            
+            // 填充当前班次的值班人员信息
+            await fillDutyPersonnel(currentShift, data);
+            
+            // 显示模态框
+            showModal('editOperationDutyModal');
+        } catch (error) {
+            console.error('加载运营中心值班信息失败:', error);
+            alert('加载运营中心值班信息失败: ' + error.message);
+        }
+    });
+
+    // 添加班次选择事件监听器
+    document.getElementById('operationShift').addEventListener('change', async function() {
+        try {
+            const selectedShift = this.value;
+            
+            // 获取值班信息
+            const response = await fetch(`/api/operation-center-duty?date=${currentDate}`);
+            
+            if (!response.ok) {
+                throw new Error('获取运营中心值班信息失败');
+            }
+            
+            const data = await response.json();
+            
+            // 清空所有人员列表
+            document.getElementById('leaderList').innerHTML = '';
+            document.getElementById('managerList').innerHTML = '';
+            document.getElementById('memberList').innerHTML = '';
+            document.getElementById('backupList').innerHTML = '';
+            
+            // 填充选中班次的值班人员信息
+            await fillDutyPersonnel(selectedShift, data);
+        } catch (error) {
+            console.error('加载班次值班信息失败:', error);
+            alert('加载班次值班信息失败: ' + error.message);
+        }
+    });
+
+    // 填充值班人员信息的函数
+    async function fillDutyPersonnel(shift, data) {
+        if (data[shift]) {
+            const duty = data[shift];
+            
+            // 填充值班领导信息
+            if (duty.leader_name && duty.leader_phone) {
+                const leaderNames = duty.leader_name.split('\n').filter(n => n.trim());
+                const leaderPhones = duty.leader_phone.split('\n').filter(p => p.trim());
+                leaderNames.forEach((name, index) => {
+                    if (name.trim()) {
+                        const item = document.createElement('div');
+                        item.className = 'personnel-item';
+                        item.innerHTML = `
+                            <div class="form-group">
+                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
+                                <input type="text" placeholder="电话" class="personnel-phone" value="${leaderPhones[index] || ''}">
+                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
+                            </div>
+                        `;
+                        document.getElementById('leaderList').appendChild(item);
+                    }
+                });
+            }
+            
+            // 填充值班主管信息
+            if (duty.manager_name && duty.manager_phone) {
+                const managerNames = duty.manager_name.split('\n').filter(n => n.trim());
+                const managerPhones = duty.manager_phone.split('\n').filter(p => p.trim());
+                managerNames.forEach((name, index) => {
+                    if (name.trim()) {
+                        const item = document.createElement('div');
+                        item.className = 'personnel-item';
+                        item.innerHTML = `
+                            <div class="form-group">
+                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
+                                <input type="text" placeholder="电话" class="personnel-phone" value="${managerPhones[index] || ''}">
+                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
+                            </div>
+                        `;
+                        document.getElementById('managerList').appendChild(item);
+                    }
+                });
+            }
+            
+            // 填充值班人员信息
+            if (duty.member_name && duty.member_phone) {
+                const memberNames = duty.member_name.split('\n').filter(n => n.trim());
+                const memberPhones = duty.member_phone.split('\n').filter(p => p.trim());
+                memberNames.forEach((name, index) => {
+                    if (name.trim()) {
+                        const item = document.createElement('div');
+                        item.className = 'personnel-item';
+                        item.innerHTML = `
+                            <div class="form-group">
+                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
+                                <input type="text" placeholder="电话" class="personnel-phone" value="${memberPhones[index] || ''}">
+                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
+                            </div>
+                        `;
+                        document.getElementById('memberList').appendChild(item);
+                    }
+                });
+            }
+            
+            // 填充备班人员信息
+            if (duty.backup_name && duty.backup_phone) {
+                const backupNames = duty.backup_name.split('\n').filter(n => n.trim());
+                const backupPhones = duty.backup_phone.split('\n').filter(p => p.trim());
+                backupNames.forEach((name, index) => {
+                    if (name.trim()) {
+                        const item = document.createElement('div');
+                        item.className = 'personnel-item';
+                        item.innerHTML = `
+                            <div class="form-group">
+                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
+                                <input type="text" placeholder="电话" class="personnel-phone" value="${backupPhones[index] || ''}">
+                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
+                            </div>
+                        `;
+                        document.getElementById('backupList').appendChild(item);
+                    }
+                });
+            }
+        }
+    }
+
+    // 添加表单提交事件监听器
+    document.getElementById('editOperationDutyForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const shift = document.getElementById('operationShift').value;
+        
+        // 收集人员信息
+        const collectPersonnel = (type) => {
+            const items = document.getElementById(`${type}List`).querySelectorAll('.personnel-item');
+            const names = [];
+            const phones = [];
+            items.forEach(item => {
+                const name = item.querySelector('.personnel-name').value.trim();
+                const phone = item.querySelector('.personnel-phone').value.trim();
+                if (name) {
+                    names.push(name);
+                    phones.push(phone);
+                }
+            });
+            return {
+                names: names.join('\n'),
+                phones: phones.join('\n')
+            };
+        };
+        
+        const leader = collectPersonnel('leader');
+        const manager = collectPersonnel('manager');
+        const member = collectPersonnel('member');
+        const backup = collectPersonnel('backup');
+        
+        try {
+            // 更新固定值班人员信息
+            const fixedDutyResponse = await fetch('/api/operation-center-fixed-duty', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({
+                    shift: parseInt(shift),
+                    leader_name: leader.names,
+                    leader_phone: leader.phones,
+                    manager_name: manager.names,
+                    manager_phone: manager.phones,
+                    member_name: member.names,
+                    member_phone: member.phones
+                })
+            });
+            
+            if (!fixedDutyResponse.ok) {
+                throw new Error('更新固定值班人员信息失败');
+            }
+            
+            // 如果有备班人员信息，更新备班人员信息
+            if (backup.names) {
+                const backupDutyResponse = await fetch('/api/operation-center-duty', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify({
+                        date: currentDate,
+                        shift: parseInt(shift),
+                        backup_name: backup.names,
+                        backup_phone: backup.phones
+                    })
+                });
+                
+                if (!backupDutyResponse.ok) {
+                    throw new Error('更新备班人员信息失败');
+                }
+            }
+            
+            alert('值班信息更新成功');
+            hideModal('editOperationDutyModal');
+            loadOperationCenterDuty();
+        } catch (error) {
+            console.error('更新值班信息失败:', error);
+            alert('更新值班信息失败: ' + error.message);
+        }
+    });
 });
 
 // 更新UI状态
@@ -466,14 +705,48 @@ function updateUI() {
         currentUser = null;
     }
     
+    // 获取当前日期
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // 获取选择的日期
+    const selectedDate = new Date(dateInput.value);
+    selectedDate.setHours(0, 0, 0, 0);
+    
+    // 判断是否是当天
+    const isToday = selectedDate.getTime() === today.getTime();
+    
     // 更新按钮显示状态
     document.getElementById('loginBtn').style.display = isLoggedIn ? 'none' : 'block';
     document.getElementById('logoutBtn').style.display = isLoggedIn ? 'block' : 'none';
-    document.getElementById('manageDeptBtn').style.display = (isLoggedIn && currentUser?.is_admin) ? 'block' : 'none';
-    document.getElementById('manageUserBtn').style.display = (isLoggedIn && currentUser?.is_admin) ? 'block' : 'none';
-    document.getElementById('importBtn').style.display = (isLoggedIn && currentUser?.is_admin) ? 'block' : 'none';
-    document.getElementById('exportBtn').style.display = (isLoggedIn && currentUser?.is_admin) ? 'block' : 'none';
-    document.getElementById('downloadTemplateBtn').style.display = (isLoggedIn && currentUser?.is_admin) ? 'block' : 'none';
+    
+    // 管理员按钮显示状态
+    const adminButtons = [
+        'manageDeptBtn',
+        'manageUserBtn',
+        'importBtn',
+        'exportBtn',
+        'downloadTemplateBtn',
+        'editOperationDutyBtn'
+    ];
+    
+    adminButtons.forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            // 导入按钮需要额外检查是否是当天
+            if (btnId === 'importBtn') {
+                btn.style.display = (isLoggedIn && currentUser?.is_admin && isToday) ? 'block' : 'none';
+            } else {
+                btn.style.display = (isLoggedIn && currentUser?.is_admin) ? 'block' : 'none';
+            }
+        }
+    });
+    
+    // 更新运营中心值班人员模块的按钮显示状态
+    const operationCenterActions = document.getElementById('operationCenterActions');
+    if (operationCenterActions) {
+        operationCenterActions.style.display = (isLoggedIn && currentUser?.is_admin) ? 'flex' : 'none';
+    }
     
     // 更新用户状态显示
     const userStatus = document.getElementById('userStatus');
@@ -505,6 +778,108 @@ function updateUI() {
     if (!isLoggedIn) {
         Object.keys(modals).forEach(modalId => {
             hideModal(modalId);
+        });
+    }
+}
+
+// 检查登录状态
+async function checkLoginStatus() {
+    const token = localStorage.getItem('token');
+    const isAdmin = localStorage.getItem('isAdmin') === 'true';
+    
+    if (token) {
+        try {
+            const response = await fetch('/api/users/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (response.ok) {
+                const user = await response.json();
+                document.getElementById('userStatus').style.display = 'block';
+                document.getElementById('loginBtn').style.display = 'none';
+                document.getElementById('username').textContent = user.username;
+                
+                // 根据用户角色显示/隐藏按钮
+                if (user.is_admin) {
+                    document.getElementById('manageDeptBtn').style.display = 'block';
+                    document.getElementById('manageUserBtn').style.display = 'block';
+                    document.getElementById('importBtn').style.display = 'block';
+                    document.getElementById('downloadTemplateBtn').style.display = 'block';
+                    document.getElementById('exportBtn').style.display = 'block';
+                    document.getElementById('operationCenterActions').style.display = 'flex';
+                    document.getElementById('leftOperationHeader').style.display = 'table-cell';
+                    document.getElementById('rightOperationHeader').style.display = 'table-cell';
+                    document.querySelectorAll('.edit-btn').forEach(btn => {
+                        btn.style.display = 'block';
+                    });
+                } else {
+                    document.getElementById('manageDeptBtn').style.display = 'none';
+                    document.getElementById('manageUserBtn').style.display = 'none';
+                    document.getElementById('importBtn').style.display = 'none';
+                    document.getElementById('downloadTemplateBtn').style.display = 'none';
+                    document.getElementById('exportBtn').style.display = 'none';
+                    document.getElementById('operationCenterActions').style.display = 'none';
+                    document.getElementById('leftOperationHeader').style.display = 'none';
+                    document.getElementById('rightOperationHeader').style.display = 'none';
+                    document.querySelectorAll('.edit-btn').forEach(btn => {
+                        btn.style.display = 'none';
+                    });
+                }
+            } else {
+                // 如果token无效，清除本地存储并更新UI
+                localStorage.removeItem('token');
+                localStorage.removeItem('username');
+                localStorage.removeItem('isAdmin');
+                document.getElementById('userStatus').style.display = 'none';
+                document.getElementById('loginBtn').style.display = 'block';
+                document.getElementById('manageDeptBtn').style.display = 'none';
+                document.getElementById('manageUserBtn').style.display = 'none';
+                document.getElementById('importBtn').style.display = 'none';
+                document.getElementById('downloadTemplateBtn').style.display = 'none';
+                document.getElementById('exportBtn').style.display = 'none';
+                document.getElementById('operationCenterActions').style.display = 'none';
+                document.getElementById('leftOperationHeader').style.display = 'none';
+                document.getElementById('rightOperationHeader').style.display = 'none';
+                document.querySelectorAll('.edit-btn').forEach(btn => {
+                    btn.style.display = 'none';
+                });
+            }
+        } catch (error) {
+            console.error('检查登录状态失败:', error);
+            // 发生错误时也清除本地存储并更新UI
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('isAdmin');
+            document.getElementById('userStatus').style.display = 'none';
+            document.getElementById('loginBtn').style.display = 'block';
+            document.getElementById('manageDeptBtn').style.display = 'none';
+            document.getElementById('manageUserBtn').style.display = 'none';
+            document.getElementById('importBtn').style.display = 'none';
+            document.getElementById('downloadTemplateBtn').style.display = 'none';
+            document.getElementById('exportBtn').style.display = 'none';
+            document.getElementById('operationCenterActions').style.display = 'none';
+            document.getElementById('leftOperationHeader').style.display = 'none';
+            document.getElementById('rightOperationHeader').style.display = 'none';
+            document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.style.display = 'none';
+            });
+        }
+    } else {
+        // 未登录状态
+        document.getElementById('userStatus').style.display = 'none';
+        document.getElementById('loginBtn').style.display = 'block';
+        document.getElementById('manageDeptBtn').style.display = 'none';
+        document.getElementById('manageUserBtn').style.display = 'none';
+        document.getElementById('importBtn').style.display = 'none';
+        document.getElementById('downloadTemplateBtn').style.display = 'none';
+        document.getElementById('exportBtn').style.display = 'none';
+        document.getElementById('operationCenterActions').style.display = 'none';
+        document.getElementById('leftOperationHeader').style.display = 'none';
+        document.getElementById('rightOperationHeader').style.display = 'none';
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.style.display = 'none';
         });
     }
 }
@@ -558,22 +933,51 @@ async function login() {
     }
 }
 
-// 登出函数
-function logout() {
-    localStorage.removeItem('token');
-    updateUI();
-    
-    // 获取日期输入元素，添加空值检查
-    const dateInputElement = document.getElementById('date');
-    if (dateInputElement) {
-        loadDutyInfo(dateInputElement.value);
-    } else {
-        // 如果找不到日期输入元素，使用当前日期
-        const today = new Date().toISOString().split('T')[0];
-        loadDutyInfo(today);
+// 退出登录
+async function logout() {
+    try {
+        const response = await fetch('/api/logout', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (response.ok) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('isAdmin');
+            
+            // 更新UI
+            document.getElementById('userStatus').style.display = 'none';
+            document.getElementById('loginBtn').style.display = 'block';
+            document.getElementById('manageDeptBtn').style.display = 'none';
+            document.getElementById('manageUserBtn').style.display = 'none';
+            document.getElementById('importBtn').style.display = 'none';
+            document.getElementById('downloadTemplateBtn').style.display = 'none';
+            document.getElementById('exportBtn').style.display = 'none';
+            document.getElementById('operationCenterActions').style.display = 'none';
+            
+            // 隐藏操作列
+            document.getElementById('leftOperationHeader').style.display = 'none';
+            document.getElementById('rightOperationHeader').style.display = 'none';
+            
+            // 移除所有编辑按钮
+            document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.style.display = 'none';
+            });
+            
+            showToast('退出登录成功', 'success');
+            
+            // 立即刷新页面
+            window.location.reload();
+        } else {
+            const error = await response.json();
+            showToast(error.detail, 'error');
+        }
+    } catch (error) {
+        showToast('退出登录失败', 'error');
     }
-    
-    loadDepartments();
 }
 
 // 加载值班信息
@@ -597,6 +1001,7 @@ async function loadDutyInfo(date) {
             displayDate = yesterday.toISOString().split('T')[0];
         }
         
+        // 获取普通部门值班信息
         const response = await fetch(`/api/duty-info?date=${displayDate}`, {
             headers: headers
         });
@@ -606,6 +1011,54 @@ async function loadDutyInfo(date) {
         }
         
         const dutyInfo = await response.json();
+        
+        // 获取运营中心值班信息（不需要认证）
+        const operationCenterResponse = await fetch(`/api/operation-center-duty?date=${displayDate}`);
+        
+        if (!operationCenterResponse.ok) {
+            throw new Error('获取运营中心值班信息失败');
+        }
+        
+        const operationCenterInfo = await operationCenterResponse.json();
+        
+        // 获取当前班次
+        const currentShift = getCurrentShift(displayDate);
+        
+        // 更新运营中心值班人员信息
+        if (operationCenterInfo[currentShift]) {
+            const duty = operationCenterInfo[currentShift];
+            
+            // 处理多人数据
+            const formatPersonnel = (names, phones) => {
+                if (!names || !phones) return '-';
+                const nameList = names.split('\n').filter(n => n.trim());
+                const phoneList = phones.split('\n').filter(p => p.trim());
+                const formattedList = nameList.map((name, index) => {
+                    const phone = phoneList[index] || '-';
+                    return `<div>${name.trim()} ${phone.trim()}</div>`;
+                });
+                return formattedList.join('');
+            };
+            
+            // 更新所有人员信息，包括备班人员
+            document.getElementById('operationLeader').innerHTML = formatPersonnel(duty.leader_name, duty.leader_phone);
+            document.getElementById('operationManager').innerHTML = formatPersonnel(duty.manager_name, duty.manager_phone);
+            document.getElementById('operationMember').innerHTML = formatPersonnel(duty.member_name, duty.member_phone);
+            document.getElementById('operationBackup').innerHTML = formatPersonnel(duty.backup_name, duty.backup_phone);
+            
+            // 更新当前班次显示
+            const shiftElement = document.getElementById('currentShift');
+            if (shiftElement) {
+                shiftElement.textContent = `${currentShift}班`;
+            }
+        } else {
+            // 如果没有找到当前班次的信息，显示默认值
+            document.getElementById('operationLeader').innerHTML = '-';
+            document.getElementById('operationManager').innerHTML = '-';
+            document.getElementById('operationMember').innerHTML = '-';
+            document.getElementById('operationBackup').innerHTML = '-';
+            document.getElementById('currentShift').textContent = '-';
+        }
         
         // 如果是非管理员用户，只显示自己部门的信息
         if (currentUser && !currentUser.is_admin) {
@@ -621,21 +1074,30 @@ async function loadDutyInfo(date) {
         }
     } catch (error) {
         console.error('加载值班信息错误:', error);
-        alert('加载值班信息失败');
+        alert(error.message);
     }
 }
 
 // 检查是否可以操作
 function canOperate(date, department) {
-    const selectedDate = new Date(date);
-    const now = new Date();
+    // 如果未登录，不允许操作
+    if (!isLoggedIn || !currentUser) {
+        return false;
+    }
     
-    // 检查部门权限
-    if (!currentUser.is_admin && currentUser.department !== department) {
+    // 如果是管理员，允许操作所有部门的值班信息
+    if (currentUser.is_admin) {
+        return true;
+    }
+    
+    // 非管理员用户只能操作自己部门的值班信息
+    if (currentUser.department !== department) {
         return false;
     }
     
     // 检查时间权限
+    const selectedDate = new Date(date);
+    const now = new Date();
     const currentHour = now.getHours();
     
     // 如果当前时间在9:00之前，允许操作前一天的值班信息
@@ -731,7 +1193,7 @@ function renderDutyTable(dutyInfo) {
             <td>${info.leader_name || '-'}<br>${info.leader_phone || '-'}</td>
             <td>${info.manager_name || '-'}<br>${info.manager_phone || '-'}</td>
             <td>${info.member_name || '-'}<br>${info.member_phone || '-'}</td>
-            ${isLoggedIn && canOperate(dateInput.value, dept) ? `<td class="operation-buttons">
+            ${isLoggedIn ? `<td class="operation-buttons">
                 <button class="edit-btn" onclick="editDuty('${dept}')">编辑</button>
                 <button class="delete-btn" onclick="deleteDuty('${dept}')">清空</button>
             </td>` : ''}
@@ -748,7 +1210,7 @@ function renderDutyTable(dutyInfo) {
             <td>${info.leader_name || '-'}<br>${info.leader_phone || '-'}</td>
             <td>${info.manager_name || '-'}<br>${info.manager_phone || '-'}</td>
             <td>${info.member_name || '-'}<br>${info.member_phone || '-'}</td>
-            ${isLoggedIn && canOperate(dateInput.value, dept) ? `<td class="operation-buttons">
+            ${isLoggedIn ? `<td class="operation-buttons">
                 <button class="edit-btn" onclick="editDuty('${dept}')">编辑</button>
                 <button class="delete-btn" onclick="deleteDuty('${dept}')">清空</button>
             </td>` : ''}
@@ -958,47 +1420,39 @@ function hideModal(modalId) {
 
 // 编辑值班信息
 async function editDuty(department) {
-    if (!isLoggedIn) {
-        alert('请先登录');
-        return;
-    }
-
-    const date = document.getElementById('date').value;
-    if (!date) {
-        alert('请先选择日期');
-        return;
-    }
-
     try {
-        console.log(`获取值班信息: 部门=${department}, 日期=${date}`);
-        const response = await fetch(`/api/duty-info/${encodeURIComponent(department)}?date=${date}`, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(`获取值班信息失败: ${errorData.detail || response.status}`);
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('未登录或登录已过期');
         }
 
-        const data = await response.json();
-        console.log('获取到的值班信息:', data);
-
+        // 获取当前值班信息
+        const response = await fetch(`/api/duty-info/${encodeURIComponent(department)}?date=${dateInput.value}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('获取值班信息失败');
+        }
+        
+        const dutyInfo = await response.json();
+        
         // 填充表单
         document.getElementById('editDepartment').value = department;
-        document.getElementById('leaderName').value = data.leader_name || '';
-        document.getElementById('leaderPhone').value = data.leader_phone || '';
-        document.getElementById('managerName').value = data.manager_name || '';
-        document.getElementById('managerPhone').value = data.manager_phone || '';
-        document.getElementById('memberName').value = data.member_name || '';
-        document.getElementById('memberPhone').value = data.member_phone || '';
-
-        // 显示模态框
+        document.getElementById('leaderName').value = dutyInfo.leader_name || '';
+        document.getElementById('leaderPhone').value = dutyInfo.leader_phone || '';
+        document.getElementById('managerName').value = dutyInfo.manager_name || '';
+        document.getElementById('managerPhone').value = dutyInfo.manager_phone || '';
+        document.getElementById('memberName').value = dutyInfo.member_name || '';
+        document.getElementById('memberPhone').value = dutyInfo.member_phone || '';
+        
+        // 显示编辑模态框
         showModal('editModal');
     } catch (error) {
         console.error('编辑值班信息错误:', error);
-        alert(error.message);
+        showToast(error.message, 'error');
     }
 }
 
@@ -1372,4 +1826,191 @@ function updateDateTime() {
 updateDateTime();
 
 // 每秒更新一次时间
-setInterval(updateDateTime, 1000); 
+setInterval(updateDateTime, 1000);
+
+// 获取当前班次
+function getCurrentShift(date = null) {
+    // 如果没有提供日期，使用当前日期
+    const targetDate = date ? new Date(date) : new Date();
+    const hour = targetDate.getHours();
+    const minute = targetDate.getMinutes();
+    const second = targetDate.getSeconds();
+    
+    // 获取目标日期是今年的第几天
+    const start = new Date(targetDate.getFullYear(), 0, 0);
+    const diff = targetDate - start;
+    const oneDay = 1000 * 60 * 60 * 24;
+    const day = Math.floor(diff / oneDay);
+    
+    // 计算当前是第几个班次（1-4）
+    const shift = (day % 4) + 1;
+    
+    // 如果当前时间在9:00之后，或者正好是8:59:59，返回当前班次
+    if (hour >= 9 || (hour === 8 && minute === 59 && second === 59)) {
+        return shift;
+    }
+    // 如果当前时间在9:00之前，返回上一个班次
+    else if (hour < 9) {
+        return shift === 1 ? 4 : shift - 1;
+    }
+}
+
+// 修改loadOperationCenterDuty函数
+async function loadOperationCenterDuty() {
+    try {
+        // 获取当前日期
+        const now = new Date();
+        const currentHour = now.getHours();
+        let displayDate = now.toISOString().split('T')[0];
+        
+        // 如果当前时间在9:00之前，显示前一天的值班信息
+        if (currentHour < 9) {
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            displayDate = yesterday.toISOString().split('T')[0];
+        }
+        
+        const response = await fetch(`/api/operation-center-duty?date=${displayDate}`);
+        
+        if (!response.ok) {
+            throw new Error('获取运营中心值班信息失败');
+        }
+        
+        const data = await response.json();
+        
+        // 获取当前班次
+        const currentShift = getCurrentShift(displayDate);
+        // 显示当前班次
+        document.getElementById('currentShift').textContent = `${currentShift}班`;
+        
+        if (data[currentShift]) {
+            const duty = data[currentShift];
+            
+            // 处理多人数据
+            const formatPersonnel = (names, phones, title) => {
+                if (!names || !phones) return '-';
+                const nameList = names.split('\n').filter(n => n.trim());
+                const phoneList = phones.split('\n').filter(p => p.trim());
+                const formattedList = nameList.map((name, index) => {
+                    const phone = phoneList[index] || '-';
+                    return `<div><span class="duty-title">${title}：</span><span class="duty-content">${name.trim()} ${phone.trim()}</span></div>`;
+                });
+                return formattedList.join('');
+            };
+            
+            // 使用innerHTML来确保换行正确显示
+            document.getElementById('operationLeader').innerHTML = formatPersonnel(duty.leader_name, duty.leader_phone, '值班领导');
+            document.getElementById('operationManager').innerHTML = formatPersonnel(duty.manager_name, duty.manager_phone, '值班主管');
+            document.getElementById('operationMember').innerHTML = formatPersonnel(duty.member_name, duty.member_phone, '值班人员');
+            document.getElementById('operationBackup').innerHTML = formatPersonnel(duty.backup_name, duty.backup_phone, '备班人员');
+        } else {
+            // 如果没有找到当前班次的信息，显示默认值
+            document.getElementById('operationLeader').innerHTML = '-';
+            document.getElementById('operationManager').innerHTML = '-';
+            document.getElementById('operationMember').innerHTML = '-';
+            document.getElementById('operationBackup').innerHTML = '-';
+            document.getElementById('currentShift').textContent = '-';
+        }
+    } catch (error) {
+        console.error('加载运营中心值班信息失败:', error);
+        // 发生错误时显示默认值
+        document.getElementById('currentShift').textContent = '-';
+        document.getElementById('operationLeader').innerHTML = '-';
+        document.getElementById('operationManager').innerHTML = '-';
+        document.getElementById('operationMember').innerHTML = '-';
+        document.getElementById('operationBackup').innerHTML = '-';
+    }
+}
+
+// 修改checkAdminStatus函数
+async function checkAdminStatus() {
+    try {
+        const response = await fetch('/api/users/me', {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('获取用户信息失败');
+        }
+        
+        const user = await response.json();
+        const isAdmin = user.is_admin;
+        
+        // 显示/隐藏编辑按钮
+        document.getElementById('editDutyBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('editOperationDutyBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('manageDeptBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('manageUserBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('importBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('downloadTemplateBtn').style.display = isAdmin ? 'block' : 'none';
+        document.getElementById('exportBtn').style.display = isAdmin ? 'block' : 'none';
+        
+        return isAdmin;
+    } catch (error) {
+        console.error('检查管理员状态失败:', error);
+        return false;
+    }
+}
+
+// 添加人员
+function addPersonnel(type) {
+    const list = document.getElementById(`${type}List`);
+    const item = document.createElement('div');
+    item.className = 'personnel-item';
+    item.innerHTML = `
+        <div class="form-group">
+            <input type="text" placeholder="姓名" class="personnel-name">
+            <input type="text" placeholder="电话" class="personnel-phone">
+            <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
+        </div>
+    `;
+    list.appendChild(item);
+}
+
+// 删除人员
+function deletePersonnel(button) {
+    const item = button.closest('.personnel-item');
+    item.remove();
+}
+
+// 导入运营中心值班信息
+async function importOperationDuty() {
+    const fileInput = document.getElementById('importOperationDutyFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        return;
+    }
+    
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+        alert('请选择 Excel 文件');
+        return;
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/api/operation-center-duty/import', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error('导入运营中心值班信息失败');
+        }
+        
+        alert('导入成功');
+        loadOperationCenterDuty();
+    } catch (error) {
+        console.error('导入运营中心值班信息错误:', error);
+        alert(error.message);
+    } finally {
+        fileInput.value = '';
+    }
+} 
