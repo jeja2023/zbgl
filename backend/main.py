@@ -101,13 +101,24 @@ def init_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL,
+                    department TEXT,
+                    is_admin INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
             # 创建用户表索引
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+            
+            # 检查管理员账号是否存在
+            cursor.execute("SELECT username FROM users WHERE username = 'admin'")
+            if not cursor.fetchone():
+                # 创建管理员账号
+                hashed_password = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt())
+                cursor.execute("""
+                    INSERT INTO users (username, password, is_admin)
+                    VALUES (?, ?, 1)
+                """, ("admin", hashed_password))
             
             # 创建值班信息表
             cursor.execute("""
@@ -122,8 +133,7 @@ def init_db():
                     member_name TEXT,
                     member_phone TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(date, department)
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
@@ -646,17 +656,28 @@ async def update_department(old_name: str, department: dict, current_user: User 
         conn = sqlite3.connect(DATABASE, check_same_thread=False)
         cursor = conn.cursor()
         
-        # 只更新指定日期及以后的记录
+        # 更新值班信息表中的部门名称
         cursor.execute("""
             UPDATE duty_info 
             SET department = ? 
             WHERE department = ? AND date >= ?
         """, (department["name"], old_name, department.get("start_date", datetime.now().date().isoformat())))
         
+        # 更新用户表中的部门名称
+        cursor.execute("""
+            UPDATE users 
+            SET department = ? 
+            WHERE department = ?
+        """, (department["name"], old_name))
+        
         conn.commit()
         return {"message": "部门更新成功"}
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.delete("/api/departments/{name}")
 async def delete_department(name: str, date: str, current_user: User = Depends(get_current_user)):
