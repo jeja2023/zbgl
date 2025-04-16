@@ -1183,17 +1183,17 @@ async def get_db_without_auth():
 @app.get("/api/operation-center-duty")
 async def get_operation_center_duty(
     date: str,
-    db: sqlite3.Connection = Depends(get_db_without_auth)
+    db: sqlite3.Connection = Depends(get_db)
 ):
     """获取运营中心值班人员信息"""
     try:
         c = db.cursor()
+        
         # 获取固定值班人员信息
         c.execute("""
             SELECT shift, leader_name, leader_phone, manager_name, manager_phone,
                    member_name, member_phone
             FROM operation_center_fixed_duty
-            ORDER BY shift
         """)
         fixed_duty = {}
         for row in c.fetchall():
@@ -1214,36 +1214,57 @@ async def get_operation_center_duty(
         """, (date,))
         backup_duty = {}
         for row in c.fetchall():
+            # 确保备班人员信息使用\n作为分隔符
+            backup_name = row[1] or ""
+            backup_phone = row[2] or ""
+            if "、" in backup_name:
+                backup_name = backup_name.replace("、", "\n")
+            if "、" in backup_phone:
+                backup_phone = backup_phone.replace("、", "\n")
+            
             backup_duty[row[0]] = {
-                "backup_name": row[1] or "",
-                "backup_phone": row[2] or ""
+                "backup_name": backup_name,
+                "backup_phone": backup_phone
             }
+        
+        # 如果没有找到当天的备班人员信息，尝试获取最近的有效备班人员信息
+        if not backup_duty:
+            c.execute("""
+                SELECT shift, backup_name, backup_phone
+                FROM operation_center_duty
+                WHERE date < ?
+                ORDER BY date DESC, shift
+                LIMIT 4
+            """, (date,))
+            for row in c.fetchall():
+                if row[0] not in backup_duty:
+                    # 确保备班人员信息使用\n作为分隔符
+                    backup_name = row[1] or ""
+                    backup_phone = row[2] or ""
+                    if "、" in backup_name:
+                        backup_name = backup_name.replace("、", "\n")
+                    if "、" in backup_phone:
+                        backup_phone = backup_phone.replace("、", "\n")
+                    
+                    backup_duty[row[0]] = {
+                        "backup_name": backup_name,
+                        "backup_phone": backup_phone
+                    }
         
         # 合并信息
         result = {}
         for shift in range(1, 5):
-            if shift in fixed_duty:
-                result[shift] = {
-                    **fixed_duty[shift],
-                    "backup_name": backup_duty.get(shift, {}).get("backup_name", ""),
-                    "backup_phone": backup_duty.get(shift, {}).get("backup_phone", "")
-                }
-            else:
-                result[shift] = {
-                    "leader_name": "",
-                    "leader_phone": "",
-                    "manager_name": "",
-                    "manager_phone": "",
-                    "member_name": "",
-                    "member_phone": "",
-                    "backup_name": backup_duty.get(shift, {}).get("backup_name", ""),
-                    "backup_phone": backup_duty.get(shift, {}).get("backup_phone", "")
-                }
+            result[shift] = {
+                **fixed_duty.get(shift, {}),
+                **backup_duty.get(shift, {})
+            }
         
         return result
     except Exception as e:
-        print(f"获取运营中心值班信息错误: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取运营中心值班信息失败: {str(e)}"
+        )
 
 @app.post("/api/operation-center-duty")
 async def create_operation_center_duty(
@@ -1621,8 +1642,14 @@ async def import_operation_center_duty(
             try:
                 # 检查日期格式
                 date = str(row['日期'])
-                if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
-                    raise ValueError(f"第{index+1}行日期格式错误: {date}")
+                try:
+                    # 尝试解析日期，允许带时间的格式
+                    parsed_date = pd.to_datetime(date)
+                    date = parsed_date.date().isoformat()  # 转换为 YYYY-MM-DD 格式
+                except ValueError:
+                    # 如果解析失败，检查是否符合 YYYY-MM-DD 格式
+                    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+                        raise ValueError(f"第{index+1}行日期格式错误: {date}")
                 
                 # 检查班次格式
                 shift_str = str(row['班次'])
@@ -1635,6 +1662,21 @@ async def import_operation_center_duty(
                     SELECT 1 FROM operation_center_fixed_duty WHERE shift = ?
                 """, (shift,))
                 
+                # 处理姓名和电话号码，将顿号分隔转换为换行分隔
+                def process_names_and_phones(names_str, phones_str):
+                    if not names_str or not phones_str:
+                        return "", ""
+                    names = [name.strip() for name in names_str.split('、')]
+                    phones = [phone.strip() for phone in phones_str.split('、')]
+                    if len(names) != len(phones):
+                        raise ValueError(f"姓名和电话号码数量不匹配: {names_str} vs {phones_str}")
+                    return '\n'.join(names), '\n'.join(phones)
+                
+                leader_names, leader_phones = process_names_and_phones(str(row['值班领导']), str(row['领导电话']))
+                manager_names, manager_phones = process_names_and_phones(str(row['值班主管']), str(row['主管电话']))
+                member_names, member_phones = process_names_and_phones(str(row['值班人员']), str(row['人员电话']))
+                backup_names, backup_phones = process_names_and_phones(str(row['备班人员']), str(row['备班电话']))
+                
                 if c.fetchone():
                     c.execute("""
                         UPDATE operation_center_fixed_duty 
@@ -1644,12 +1686,12 @@ async def import_operation_center_duty(
                             updated_at = ?
                         WHERE shift = ?
                     """, (
-                        str(row['值班领导']),
-                        str(row['领导电话']),
-                        str(row['值班主管']),
-                        str(row['主管电话']),
-                        str(row['值班人员']),
-                        str(row['人员电话']),
+                        leader_names,
+                        leader_phones,
+                        manager_names,
+                        manager_phones,
+                        member_names,
+                        member_phones,
                         current_time,
                         shift
                     ))
@@ -1662,12 +1704,12 @@ async def import_operation_center_duty(
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         shift,
-                        str(row['值班领导']),
-                        str(row['领导电话']),
-                        str(row['值班主管']),
-                        str(row['主管电话']),
-                        str(row['值班人员']),
-                        str(row['人员电话']),
+                        leader_names,
+                        leader_phones,
+                        manager_names,
+                        manager_phones,
+                        member_names,
+                        member_phones,
                         current_time,
                         current_time
                     ))
@@ -1685,8 +1727,8 @@ async def import_operation_center_duty(
                             updated_at = ?
                         WHERE date = ? AND shift = ?
                     """, (
-                        str(row['备班人员']),
-                        str(row['备班电话']),
+                        backup_names,
+                        backup_phones,
                         current_time,
                         date,
                         shift
@@ -1699,8 +1741,8 @@ async def import_operation_center_duty(
                     """, (
                         date,
                         shift,
-                        str(row['备班人员']),
-                        str(row['备班电话']),
+                        backup_names,
+                        backup_phones,
                         current_time,
                         current_time
                     ))

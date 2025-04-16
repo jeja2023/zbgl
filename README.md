@@ -1,16 +1,30 @@
 # 值班管理系统
 
-一个基于 FastAPI 和 SQLite 的简单值班管理系统。
+一个基于 FastAPI 和 SQLite 的简单值班管理系统，支持多班次值班管理、数据导入导出等功能。
 
 ## 功能特点
 
-- 用户登录/登出
-- 管理员功能
-  - 用户管理
-  - 部门管理
-  - 值班信息管理
-- 数据导入/导出
-- 局域网部署支持
+- 用户管理
+  - 用户登录/登出
+  - 密码修改
+  - 管理员权限控制
+- 部门管理
+  - 部门信息维护
+  - 部门值班信息管理
+- 值班管理
+  - 多班次值班（1-4班）
+  - 值班人员信息维护
+  - 备班人员管理
+  - 值班历史记录查询
+- 运营中心值班管理
+  - 固定值班人员设置
+  - 备班人员管理
+  - 班次轮换管理
+  - 值班信息批量编辑
+- 数据管理
+  - Excel 数据导入/导出
+  - 模板下载
+  - 数据备份
 
 ## 技术栈
 
@@ -18,7 +32,7 @@
 - 数据库：SQLite
 - 前端：HTML + CSS + JavaScript
 - 认证：JWT
-- 数据处理：pandas
+- 数据处理：pandas, openpyxl, xlsxwriter
 
 ## 系统要求
 
@@ -51,6 +65,22 @@ cd backend
 pip install -r requirements.txt
 ```
 
+## Python 包依赖
+
+主要依赖包及其用途：
+
+- `fastapi`: Web 框架
+- `uvicorn`: ASGI 服务器
+- `python-jose[cryptography]`: JWT 认证
+- `passlib[bcrypt]`: 密码加密
+- `python-multipart`: 文件上传支持
+- `pandas`: 数据处理
+- `openpyxl`: Excel 文件处理
+- `xlsxwriter`: Excel 文件生成
+- `python-dotenv`: 环境变量管理
+
+完整依赖列表请查看 `backend/requirements.txt`。
+
 ## 使用方法
 
 1. 启动服务器：
@@ -66,6 +96,15 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 3. 默认管理员账号：
 - 用户名：admin
 - 密码：admin123
+
+## 值班班次说明
+
+- 系统支持 4 个班次（1-4班）轮换
+- 每个班次的值班时间为：当天上午 9:00 到次日 8:59:59
+- 班次轮换规则：
+  - 每天自动切换到下一个班次
+  - 第 4 班后自动切换到第 1 班
+  - 凌晨 0:00 到上午 8:59:59 显示前一天的班次
 
 ## 局域网部署说明
 
@@ -100,28 +139,21 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 └── README.md             # 项目说明
 ```
 
-## 依赖说明
+## 开发说明
 
-主要依赖包及其用途：
-- fastapi: Web 框架
-- uvicorn: ASGI 服务器
-- python-jose: JWT 认证
-- bcrypt: 密码加密
-- python-multipart: 文件上传
-- jinja2: 模板引擎
-- pandas: 数据处理
-- openpyxl: Excel 文件处理
+1. 数据库初始化：
+- 系统首次运行时会自动创建数据库和必要的数据表
+- 默认创建管理员账号（admin/admin123）
 
-## 数据库说明
+2. 数据备份：
+- 定期备份 `duty_system.db` 文件
+- 使用导出功能备份值班信息
 
-- 数据库文件：`backend/duty_system.db`
-- 首次运行时会自动创建数据库和管理员账号
-- 建议定期备份数据库文件
+3. 安全建议：
+- 定期修改管理员密码
+- 及时删除不必要的用户账号
+- 限制数据库文件的访问权限
 
-## 注意事项
+## 许可证
 
-1. 请及时修改默认管理员密码
-2. 确保服务器有足够的存储空间
-3. 定期备份数据库文件
-4. 在导入 Excel 文件时，请确保数据格式正确
-5. 导出数据时，手机号码会自动去除 ".0" 后缀 
+MIT License 

@@ -511,88 +511,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 填充值班人员信息的函数
     async function fillDutyPersonnel(shift, data) {
-        if (data[shift]) {
+        try {
             const duty = data[shift];
-            
-            // 填充值班领导信息
-            if (duty.leader_name && duty.leader_phone) {
-                const leaderNames = duty.leader_name.split('\n').filter(n => n.trim());
-                const leaderPhones = duty.leader_phone.split('\n').filter(p => p.trim());
-                leaderNames.forEach((name, index) => {
-                    if (name.trim()) {
-                        const item = document.createElement('div');
-                        item.className = 'personnel-item';
-                        item.innerHTML = `
-                            <div class="form-group">
-                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
-                                <input type="text" placeholder="电话" class="personnel-phone" value="${leaderPhones[index] || ''}">
-                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
-                            </div>
-                        `;
-                        document.getElementById('leaderList').appendChild(item);
-                    }
+            if (!duty) return;
+
+            // 处理多人数据
+            const processPersonnel = (names, phones, containerId) => {
+                const container = document.getElementById(containerId);
+                container.innerHTML = '';
+                
+                if (!names || !phones) return;
+                
+                // 处理不同的分隔符（\n或、）
+                const nameList = names.split(/[\n、]/).filter(n => n.trim());
+                const phoneList = phones.split(/[\n、]/).filter(p => p.trim());
+                
+                nameList.forEach((name, index) => {
+                    const phone = phoneList[index] || '';
+                    const personnelDiv = document.createElement('div');
+                    personnelDiv.className = 'personnel-item';
+                    personnelDiv.innerHTML = `
+                        <input type="text" class="personnel-name" value="${name.trim()}" placeholder="姓名">
+                        <input type="text" class="personnel-phone" value="${phone.trim()}" placeholder="电话">
+                        <button type="button" class="remove-personnel-btn" onclick="removePersonnel(this)">删除</button>
+                    `;
+                    container.appendChild(personnelDiv);
                 });
-            }
-            
-            // 填充值班主管信息
-            if (duty.manager_name && duty.manager_phone) {
-                const managerNames = duty.manager_name.split('\n').filter(n => n.trim());
-                const managerPhones = duty.manager_phone.split('\n').filter(p => p.trim());
-                managerNames.forEach((name, index) => {
-                    if (name.trim()) {
-                        const item = document.createElement('div');
-                        item.className = 'personnel-item';
-                        item.innerHTML = `
-                            <div class="form-group">
-                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
-                                <input type="text" placeholder="电话" class="personnel-phone" value="${managerPhones[index] || ''}">
-                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
-                            </div>
-                        `;
-                        document.getElementById('managerList').appendChild(item);
-                    }
-                });
-            }
-            
-            // 填充值班人员信息
-            if (duty.member_name && duty.member_phone) {
-                const memberNames = duty.member_name.split('\n').filter(n => n.trim());
-                const memberPhones = duty.member_phone.split('\n').filter(p => p.trim());
-                memberNames.forEach((name, index) => {
-                    if (name.trim()) {
-                        const item = document.createElement('div');
-                        item.className = 'personnel-item';
-                        item.innerHTML = `
-                            <div class="form-group">
-                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
-                                <input type="text" placeholder="电话" class="personnel-phone" value="${memberPhones[index] || ''}">
-                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
-                            </div>
-                        `;
-                        document.getElementById('memberList').appendChild(item);
-                    }
-                });
-            }
-            
-            // 填充备班人员信息
-            if (duty.backup_name && duty.backup_phone) {
-                const backupNames = duty.backup_name.split('\n').filter(n => n.trim());
-                const backupPhones = duty.backup_phone.split('\n').filter(p => p.trim());
-                backupNames.forEach((name, index) => {
-                    if (name.trim()) {
-                        const item = document.createElement('div');
-                        item.className = 'personnel-item';
-                        item.innerHTML = `
-                            <div class="form-group">
-                                <input type="text" placeholder="姓名" class="personnel-name" value="${name.trim()}">
-                                <input type="text" placeholder="电话" class="personnel-phone" value="${backupPhones[index] || ''}">
-                                <button type="button" class="delete-personnel-btn" onclick="deletePersonnel(this)">删除</button>
-                            </div>
-                        `;
-                        document.getElementById('backupList').appendChild(item);
-                    }
-                });
-            }
+            };
+
+            // 填充各类人员信息
+            processPersonnel(duty.leader_name, duty.leader_phone, 'leaderList');
+            processPersonnel(duty.manager_name, duty.manager_phone, 'managerList');
+            processPersonnel(duty.member_name, duty.member_phone, 'memberList');
+            processPersonnel(duty.backup_name, duty.backup_phone, 'backupList');
+        } catch (error) {
+            console.error('填充值班人员信息失败:', error);
+            throw error;
         }
     }
 
@@ -1830,29 +1784,37 @@ setInterval(updateDateTime, 1000);
 
 // 获取当前班次
 function getCurrentShift(date = null) {
-    // 如果没有提供日期，使用当前日期
-    const targetDate = date ? new Date(date) : new Date();
-    const hour = targetDate.getHours();
-    const minute = targetDate.getMinutes();
-    const second = targetDate.getSeconds();
+    const now = date ? new Date(date) : new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const seconds = now.getSeconds();
     
     // 获取目标日期是今年的第几天
-    const start = new Date(targetDate.getFullYear(), 0, 0);
-    const diff = targetDate - start;
+    const start = new Date(now.getFullYear(), 0, 0);
+    const diff = now - start;
     const oneDay = 1000 * 60 * 60 * 24;
     const day = Math.floor(diff / oneDay);
     
     // 计算当前是第几个班次（1-4）
     const shift = (day % 4) + 1;
     
-    // 如果当前时间在9:00之后，或者正好是8:59:59，返回当前班次
-    if (hour >= 9 || (hour === 8 && minute === 59 && second === 59)) {
-        return shift;
+    // 如果是凌晨0点到上午8:59:59，应该显示前一天的班次
+    if (hours < 9) {
+        // 获取前一天的日期
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        // 获取前一天的班次
+        const yesterdayStart = new Date(yesterday.getFullYear(), 0, 0);
+        const yesterdayDiff = yesterday - yesterdayStart;
+        const yesterdayDay = Math.floor(yesterdayDiff / oneDay);
+        const yesterdayShift = (yesterdayDay % 4) + 1;
+        
+        return yesterdayShift;
     }
-    // 如果当前时间在9:00之前，返回上一个班次
-    else if (hour < 9) {
-        return shift === 1 ? 4 : shift - 1;
-    }
+    
+    // 9点以后显示当天的班次
+    return shift;
 }
 
 // 修改loadOperationCenterDuty函数
